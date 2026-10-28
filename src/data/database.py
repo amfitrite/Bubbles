@@ -28,7 +28,7 @@ class DatabaseManager:
 
         cursor = conn.cursor()
 
-        # ticks table (Cache for raw ticks)
+        # ticks table
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS ticks (
             id       INTEGER PRIMARY KEY,
@@ -63,6 +63,8 @@ class DatabaseManager:
         )
         """)
 
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_bars_symbol_ts ON bars_1m(symbol, ts)")
+
         # meta table
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS meta (
@@ -82,7 +84,6 @@ class DatabaseManager:
         )
         """)
 
-        # check schema version
         cursor.execute("SELECT version FROM schema_version")
         row = cursor.fetchone()
         if not row:
@@ -103,12 +104,8 @@ class DatabaseManager:
             self.thread.join(timeout=2.0)
 
     def enqueue_ticks(self, symbol, ticks):
-        """
-        ticks: list of tuples (ts, bid, ask, last, volume, flags, side)
-        """
         if not self.running:
             return
-
         batch = ('INSERT_TICKS', symbol, ticks)
         try:
             self.write_queue.put_nowait(batch)
@@ -127,8 +124,33 @@ class DatabaseManager:
         except queue.Full:
             pass
 
+    def enqueue_bars_1m(self, symbol, bars):
+        """
+        bars: list of tuples (ts, open, high, low, close, volume, buy_vol, sell_vol, vwap, ticks)
+        """
+        if not self.running or not bars:
+            return
+        batch = ('UPSERT_BARS_1M', symbol, bars)
+        try:
+            self.write_queue.put_nowait(batch)
+        except queue.Full:
+            pass
+
+    def get_bars_1m(self, symbol, start_ts, end_ts):
+        """Queries 1-minute historical bars synchronously for macro views."""
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT ts, open, high, low, close, volume, buy_vol, sell_vol, vwap, ticks
+            FROM bars_1m
+            WHERE symbol = ? AND ts >= ? AND ts <= ?
+            ORDER BY ts ASC
+        """, (symbol, start_ts, end_ts))
+        rows = cursor.fetchall()
+        conn.close()
+        return rows
+
     def get_last_ts(self, symbol):
-        """Runs synchronously on the calling thread"""
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
         cursor.execute("SELECT MAX(ts) FROM ticks WHERE symbol = ?", (symbol,))
@@ -138,7 +160,6 @@ class DatabaseManager:
 
     def _writer_loop(self):
         conn = sqlite3.connect(str(self.db_path))
-        # optimize connection for writer thread
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA synchronous = NORMAL")
 
@@ -147,30 +168,42 @@ class DatabaseManager:
 
         while self.running or not self.write_queue.empty():
             try:
-                # Wait for data, timeout to allow graceful exit
                 batch = self.write_queue.get(timeout=0.1)
 
                 cmd = batch[0]
                 if cmd == 'INSERT_TICKS':
                     symbol = batch[1]
                     ticks = batch[2]
-
-                    # Prepare records
-                    records = []
-                    for t in ticks:
-                        records.append((symbol, t[0], t[1], t[2], t[3], t[4], t[5], t[6]))
-
+                    records = [(symbol, t[0], t[1], t[2], t[3], t[4], t[5], t[6]) for t in ticks]
                     conn.executemany(
                         "INSERT INTO ticks (symbol, ts, bid, ask, last, volume, flags, side) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                         records
                     )
                     pending_commits += len(records)
 
+                elif cmd == 'UPSERT_BARS_1M':
+                    symbol = batch[1]
+                    bars = batch[2]
+                    records = [(symbol, b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9]) for b in bars]
+                    conn.executemany("""
+                    INSERT INTO bars_1m (symbol, ts, open, high, low, close, volume, buy_vol, sell_vol, vwap, ticks)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(symbol, ts) DO UPDATE SET
+                        high = MAX(bars_1m.high, excluded.high),
+                        low = MIN(bars_1m.low, excluded.low),
+                        close = excluded.close,
+                        volume = bars_1m.volume + excluded.volume,
+                        buy_vol = bars_1m.buy_vol + excluded.buy_vol,
+                        sell_vol = bars_1m.sell_vol + excluded.sell_vol,
+                        vwap = excluded.vwap,
+                        ticks = bars_1m.ticks + excluded.ticks
+                    """, records)
+                    pending_commits += len(records)
+
                 elif cmd == 'UPSERT_META':
                     symbol = batch[1]
                     m = batch[2]
                     ts = batch[3]
-
                     conn.execute("""
                     INSERT INTO meta (symbol, digits, point, tick_size, contract_size, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?)
@@ -183,7 +216,6 @@ class DatabaseManager:
                     """, (symbol, m['digits'], m['point'], m['tick_size'], m['contract_size'], ts))
                     pending_commits += 1
 
-                # Commit if we reached batch size or queue is empty
                 if pending_commits >= batch_size or self.write_queue.empty():
                     conn.commit()
                     pending_commits = 0
@@ -197,7 +229,6 @@ class DatabaseManager:
             except Exception as e:
                 logger.error(f"Error in DB writer loop: {e}")
 
-        # Final commit before exiting
         if pending_commits > 0:
             conn.commit()
         conn.close()

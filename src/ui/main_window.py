@@ -10,9 +10,10 @@ from src.ui.theme import Theme
 logger = logging.getLogger(__name__)
 
 class MainWindow(QMainWindow):
-    def __init__(self, tick_store, db_manager):
+    def __init__(self, tick_store, bar_store=None, db_manager=None):
         super().__init__()
         self.tick_store = tick_store
+        self.bar_store = bar_store
         self.db_manager = db_manager
 
         self.setWindowTitle("Bubbles — Hybrid Micro/Macro Order Flow")
@@ -28,7 +29,12 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(f"QMainWindow {{ background-color: {Theme.BACKGROUND_HEX}; }}")
 
         # Set Bubble Canvas as the central workspace
-        self.canvas = BubbleCanvas(self.tick_store, parent=self)
+        self.canvas = BubbleCanvas(
+            tick_store=self.tick_store,
+            bar_store=self.bar_store,
+            db_manager=self.db_manager,
+            parent=self
+        )
         self.setCentralWidget(self.canvas)
 
     def on_symbol_meta(self, symbol: str, tick_size: float = 0.01):

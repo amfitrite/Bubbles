@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt, QTimer, QPoint
 from src.engine.camera import Camera
 from src.engine.lod import LODSelector
 from src.engine.micro_grid import MicroGrid
+from src.engine.macro_series import MacroSeries
 from src.ui.bubble_renderer import BubbleRenderer
 from src.ui.hud import HUDOverlay
 from src.ui.theme import Theme
@@ -15,12 +16,16 @@ from src.util.math_utils import robust_p95
 class BubbleCanvas(QWidget):
     """
     Core Canvas for rendering order flow bubbles.
-    Strictly follows the 'Bubbles only on dark canvas' principle.
+    Implements the Hybrid Micro/Macro Level of Detail (LOD) architecture.
     """
-    def __init__(self, tick_store, parent=None):
+    def __init__(self, tick_store, bar_store=None, db_manager=None, parent=None):
         super().__init__(parent)
         self.tick_store = tick_store
+        self.bar_store = bar_store
+        self.db_manager = db_manager
+
         self.micro_grid = MicroGrid()
+        self.macro_series = MacroSeries()
         self.renderer = BubbleRenderer()
         self.camera = Camera(self.width(), self.height())
 
@@ -33,7 +38,7 @@ class BubbleCanvas(QWidget):
 
         # Engine / Data state
         self.last_rendered_version = -1
-        self.visible_bubbles = [] # list of tuple (screen_x, screen_y, radius, color_type, has_glow)
+        self.visible_bubbles = []
         self.p95_volume = 1.0
         self.tick_size = 0.01
         self.symbol = "XAUUSD"
@@ -67,9 +72,9 @@ class BubbleCanvas(QWidget):
         now_sec = time.time()
         latest_tick_ms = self.tick_store.last_ts if self.tick_store else 0
 
-        # Determine connection status
+        # Connection status
         has_recent = (now_sec - self.last_tick_time) < 10.0 if self.last_tick_time > 0 else False
-        self.is_connected = (self.tick_store.count > 0 and has_recent)
+        self.is_connected = (self.tick_store and self.tick_store.count > 0 and has_recent)
 
         # 1. Update live follow in camera
         if self.camera.follow_live and latest_tick_ms > 0:
@@ -99,7 +104,7 @@ class BubbleCanvas(QWidget):
         self.update()
 
     def _rebuild_scene(self, latest_tick_ms: float):
-        """Extracts visible ticks and runs MicroGrid aggregation."""
+        """Builds combined Micro and Macro bubbles based on current LOD."""
         if not self.tick_store or self.tick_store.count == 0:
             self.visible_bubbles = []
             return
@@ -114,83 +119,138 @@ class BubbleCanvas(QWidget):
         self.last_price = float(last_t['last'] if last_t['last'] > 0 else last_t['bid'])
         self.last_tick_time = time.time()
 
-        # Slice ticks within camera time viewport [min_time - 1 bucket, max_time + 1 bucket]
         min_t = self.camera.min_time
         max_t = self.camera.max_time
-
-        # Binary search slice for speed
-        ts_arr = snapshot['ts']
-        start_idx = np.searchsorted(ts_arr, min_t, side='left')
-        end_idx = np.searchsorted(ts_arr, max_t, side='right')
-
-        visible_ticks = snapshot[start_idx:end_idx]
-        if len(visible_ticks) == 0:
-            self.visible_bubbles = []
-            return
 
         # Calculate LOD
         bucket_ms, price_bin, macro_weight, _ = LODSelector.calculate(
             self.camera.time_span_ms, self.camera.price_range, self.tick_size
         )
 
-        # Aggregate through MicroGrid
-        cells = self.micro_grid.build_grid(
-            visible_ticks,
-            self.camera.time_span_ms,
-            bucket_ms,
-            price_bin,
-            style='vwap'
-        )
+        # Fast binary slice for ticks in viewport
+        ts_arr = snapshot['ts']
+        start_idx = np.searchsorted(ts_arr, min_t, side='left')
+        end_idx = np.searchsorted(ts_arr, max_t, side='right')
+        visible_ticks = snapshot[start_idx:end_idx]
 
-        if not cells:
-            self.visible_bubbles = []
-            return
-
-        # Compute robust p95 of cell volumes
-        vols = np.array([c['volume'] for c in cells])
-        self.p95_volume = robust_p95(vols)
-        p98_volume = float(np.percentile(vols, 98)) if len(vols) >= 5 else (self.p95_volume * 1.5)
-
-        # Collect price bounds for camera auto-fit
-        prices = [c['y'] for c in cells]
-        min_p = min(prices)
-        max_p = max(prices)
-        if self.camera.auto_fit_price:
-            self.camera.update_auto_fit(min_p, max_p, self.tick_size)
-
-        # Convert cells to screen space bubbles
         bubbles = []
+        collected_prices = []
         w = self.width()
         h = self.height()
 
-        for c in cells:
-            sx = self.camera.time_to_screen_x(c['x'])
-            sy = self.camera.price_to_screen_y(c['y'])
+        # -------------------------------------------------------------
+        # A. MICRO LAYER (Computed if macro_weight < 0.98)
+        # -------------------------------------------------------------
+        if macro_weight < 0.98 and len(visible_ticks) > 0:
+            micro_alpha = 1.0 - macro_weight
+            cells = self.micro_grid.build_grid(
+                visible_ticks,
+                self.camera.time_span_ms,
+                bucket_ms,
+                price_bin,
+                style='vwap'
+            )
+            if cells:
+                vols = np.array([c['volume'] for c in cells])
+                p95_v = robust_p95(vols)
+                p98_v = float(np.percentile(vols, 98)) if len(vols) >= 5 else (p95_v * 1.5)
 
-            # Viewport culling
-            if sx < -50 or sx > w + 50 or sy < -50 or sy > h + 50:
-                continue
+                for c in cells:
+                    collected_prices.append(c['y'])
+                    sx = self.camera.time_to_screen_x(c['x'])
+                    sy = self.camera.price_to_screen_y(c['y'])
 
-            vol = c['volume']
-            radius = self.renderer.compute_radius(vol, self.p95_volume, is_macro=(macro_weight >= 0.8))
-            has_glow = (vol >= p98_volume)
-            color_type = "classic" # Classic cyan mode for M1
+                    if sx < -50 or sx > w + 50 or sy < -50 or sy > h + 50:
+                        continue
 
-            bubbles.append({
-                'sx': sx,
-                'sy': sy,
-                'radius': radius,
-                'color_type': color_type,
-                'has_glow': has_glow,
-                'volume': vol
-            })
+                    vol = c['volume']
+                    radius = self.renderer.compute_radius(vol, p95_v, is_macro=False)
+                    has_glow = (vol >= p98_v)
 
-        # Cap bubbles to max 3000 as per README
+                    bubbles.append({
+                        'sx': sx,
+                        'sy': sy,
+                        'radius': radius,
+                        'color_type': 'classic',
+                        'has_glow': has_glow,
+                        'alpha': micro_alpha,
+                        'volume': vol
+                    })
+
+        # -------------------------------------------------------------
+        # B. MACRO LAYER (Computed if macro_weight > 0.02)
+        # -------------------------------------------------------------
+        if macro_weight > 0.02:
+            macro_alpha = macro_weight
+            macro_bubbles = []
+
+            # 1. Try to fetch from BarStore (1s or 1m bars)
+            if self.bar_store:
+                if self.camera.time_span_ms <= 3600_000.0 * 6:  # up to 6 hours: 1s bars
+                    bars = self.bar_store.get_bars_1s(int(min_t), int(max_t))
+                else:
+                    bars = self.bar_store.get_bars_1m(int(min_t), int(max_t))
+
+                if len(bars) > 0:
+                    macro_bubbles = self.macro_series.build_from_bars(bars, bucket_ms)
+
+            # 2. Multi-day fallback: query SQLite bars_1m if BarStore has few bars
+            if len(macro_bubbles) == 0 and self.db_manager and self.camera.time_span_ms > 3600_000.0:
+                db_bars = self.db_manager.get_bars_1m(self.symbol, int(min_t), int(max_t))
+                if db_bars:
+                    # Convert db rows to structured numpy array
+                    bar_dtype = self.bar_store.dtype if self.bar_store else np.dtype([
+                        ('ts', np.int64), ('open', np.float64), ('high', np.float64),
+                        ('low', np.float64), ('close', np.float64), ('volume', np.float64),
+                        ('buy_vol', np.float64), ('sell_vol', np.float64),
+                        ('vwap', np.float64), ('ticks', np.int32)
+                    ])
+                    np_bars = np.array(db_bars, dtype=bar_dtype)
+                    macro_bubbles = self.macro_series.build_from_bars(np_bars, bucket_ms)
+
+            # 3. Fallback: aggregate directly from visible ticks
+            if len(macro_bubbles) == 0 and len(visible_ticks) > 0:
+                macro_bubbles = self.macro_series.build_from_ticks(visible_ticks, bucket_ms)
+
+            if macro_bubbles:
+                m_vols = np.array([mb['volume'] for mb in macro_bubbles])
+                m_p95 = robust_p95(m_vols)
+                m_p98 = float(np.percentile(m_vols, 98)) if len(m_vols) >= 5 else (m_p95 * 1.5)
+
+                for mb in macro_bubbles:
+                    collected_prices.append(mb['y'])
+                    sx = self.camera.time_to_screen_x(mb['x'])
+                    sy = self.camera.price_to_screen_y(mb['y'])
+
+                    if sx < -60 or sx > w + 60 or sy < -60 or sy > h + 60:
+                        continue
+
+                    vol = mb['volume']
+                    radius = self.renderer.compute_radius(vol, m_p95, is_macro=True)
+                    has_glow = (vol >= m_p98)
+
+                    bubbles.append({
+                        'sx': sx,
+                        'sy': sy,
+                        'radius': radius,
+                        'color_type': 'classic',
+                        'has_glow': has_glow,
+                        'alpha': macro_alpha,
+                        'volume': vol
+                    })
+
+        # Auto-fit camera price range
+        if self.camera.auto_fit_price and collected_prices:
+            min_p = min(collected_prices)
+            max_p = max(collected_prices)
+            self.camera.update_auto_fit(min_p, max_p, self.tick_size)
+
+        # Cap bubbles to 3000 max
         if len(bubbles) > 3000:
             bubbles.sort(key=lambda b: b['volume'], reverse=True)
             bubbles = bubbles[:3000]
 
-        # Sort so larger bubbles are drawn FIRST (in the back), smaller on top
+        # Sort so larger bubbles are drawn FIRST (in back), smaller on top
         bubbles.sort(key=lambda b: b['radius'], reverse=True)
         self.visible_bubbles = bubbles
 
@@ -201,16 +261,16 @@ class BubbleCanvas(QWidget):
         w = self.width()
         h = self.height()
 
-        # 1. Canvas Background with subtle radial vignette
+        # Canvas Background with subtle radial vignette
         grad = QRadialGradient(w / 2.0, h / 2.0, max(w, h) * 0.7)
-        grad.setColorAt(0.0, QColor("#0A0E15")) # subtle center highlight
-        grad.setColorAt(0.8, QColor("#06080C")) # pure dark edge
+        grad.setColorAt(0.0, QColor("#0A0E15"))
+        grad.setColorAt(0.8, QColor("#06080C"))
         grad.setColorAt(1.0, QColor("#040508"))
         painter.setBrush(QBrush(grad))
         painter.setPen(Qt.NoPen)
         painter.drawRect(0, 0, w, h)
 
-        # 2. Draw Bubbles
+        # Draw Bubbles (with their respective alpha)
         for b in self.visible_bubbles:
             self.renderer.draw_bubble(
                 painter,
@@ -218,7 +278,8 @@ class BubbleCanvas(QWidget):
                 b['sy'],
                 b['radius'],
                 color_type=b['color_type'],
-                has_glow=b['has_glow']
+                has_glow=b['has_glow'],
+                alpha=b['alpha']
             )
 
         painter.end()
@@ -238,9 +299,9 @@ class BubbleCanvas(QWidget):
         zoom_price = True
 
         if modifiers & Qt.ShiftModifier:
-            zoom_price = False # Shift = time zoom only
+            zoom_price = False
         elif modifiers & Qt.ControlModifier:
-            zoom_time = False  # Ctrl = price zoom only
+            zoom_time = False
 
         self.camera.zoom(
             factor=factor,
@@ -277,24 +338,22 @@ class BubbleCanvas(QWidget):
     def keyPressEvent(self, event):
         key = event.key()
         if key == Qt.Key_Space:
-            # Re-anchor to live
             self.camera.follow_live = True
             self.camera.auto_fit_price = True
             event.accept()
         elif key in (Qt.Key_Q, Qt.Key_1):
             self.hud.active_lens = "CONTEXT"
-            self.camera.time_span_ms = 4 * 3600_000.0 # 4 hours
+            self.camera.time_span_ms = 4 * 3600_000.0  # 4 hours (Macro)
             event.accept()
         elif key in (Qt.Key_W, Qt.Key_2):
             self.hud.active_lens = "PRESSURE"
-            self.camera.time_span_ms = 15 * 60_000.0  # 15 minutes
+            self.camera.time_span_ms = 15 * 60_000.0   # 15 minutes (Hybrid)
             event.accept()
         elif key in (Qt.Key_E, Qt.Key_3):
             self.hud.active_lens = "TRIGGER"
-            self.camera.time_span_ms = 120_000.0      # 2 minutes
+            self.camera.time_span_ms = 120_000.0       # 2 minutes (Micro)
             event.accept()
         elif key == Qt.Key_Tab:
-            # Cycle lenses
             order = ["CONTEXT", "PRESSURE", "TRIGGER"]
             idx = (order.index(self.hud.active_lens) + 1) % len(order)
             self.hud.active_lens = order[idx]
