@@ -4,7 +4,7 @@ import random
 import argparse
 import sys
 
-def run_simulation(host="127.0.0.1", port=5558, symbol="XAUUSD", count=2000, live=True):
+def run_simulation(host="127.0.0.1", port=5555, symbol="XAUUSD", count=2000, live=True):
     print(f"Connecting to Bubbles terminal at {host}:{port}...")
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -100,7 +100,7 @@ def run_simulation(host="127.0.0.1", port=5558, symbol="XAUUSD", count=2000, liv
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Simulate MT5 EA Order Flow Feed for Bubbles")
-    parser.add_argument("--port", type=int, default=5558, help="Port to connect (default 5558)")
+    parser.add_argument("--port", type=int, default=5555, help="Port to connect (default 5555)")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host (default 127.0.0.1)")
     parser.add_argument("--count", type=int, default=2500, help="Number of historical ticks (default 2500)")
     args = parser.parse_args()
