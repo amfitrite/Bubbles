@@ -15,7 +15,7 @@ dist/
 *.egg-info/
 
 # Project runtime data & logs (sesuai README)
-data/
+#data/
 logs/
 *.db
 *.sqlite
@@ -31,3 +31,8 @@ logs/
 Thumbs.db
 Desktop.ini
 .DS_Store
+#data/
+logs/
+__pycache__/
+*.pyc
+.pytest_cache/
