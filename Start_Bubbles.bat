@@ -28,7 +28,7 @@ pip install -r requirements.txt
 
 :: Start Application
 echo.
-echo [INFO] Starting Application on Port 5558...
+echo [INFO] Starting Application on Ports 5555..5559...
 python app.py
 
 :: Deactivate upon exit

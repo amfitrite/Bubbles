@@ -1,6 +1,7 @@
 import sys
 import os
 import logging
+import time
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
@@ -19,11 +20,11 @@ class BubblesApp:
     def __init__(self):
         self.app = QApplication(sys.argv)
 
-        # Initialize Core Data Structures (M0)
+        # Initialize Core Data Structures
         self.tick_store = TickStore(max_ticks=1_000_000)
         self.db_manager = DatabaseManager()
 
-        # Initialize TCP Server (M0)
+        # Initialize TCP Server
         self.server = BridgeServer(callback=self.on_network_event)
 
         # Set Application Icon
@@ -46,7 +47,7 @@ class BubblesApp:
     def on_network_event(self, sock, symbol, msg_type, data):
         """
         Callback fired by BridgeServer when parsing data.
-        Runs on the BridgeServer thread. Do not call UI functions directly here.
+        Runs on the BridgeServer thread.
         """
         if msg_type == 'TICK':
             # Add to fast memory cache
@@ -57,23 +58,23 @@ class BubblesApp:
                 last=data['last'],
                 volume=data['volume'],
                 flags=data['flags'],
-                side=0 # We will calculate side later based on tick rules
+                side=0
             )
 
             # Send to SQLite WAL background writer
-            # We batch this in reality, but for M0 structural proof:
             self.db_manager.enqueue_ticks(symbol, [(
                 data['ts'], data['bid'], data['ask'], data['last'], data['volume'], data['flags'], 0
             )])
 
         elif msg_type == 'META':
             # Save meta definition
-            import time
             self.db_manager.enqueue_meta(symbol, data, int(time.time() * 1000))
             logger.info(f"Received META for {symbol}: {data}")
+            self.window.on_symbol_meta(symbol, data.get('tick_size', 0.01))
 
         elif msg_type == 'SYMBOL':
             logger.info(f"Connected to symbol stream: {symbol}")
+            self.window.on_symbol_meta(symbol)
 
     def run(self):
         logger.info("Starting Bubbles Application...")

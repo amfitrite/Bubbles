@@ -1,7 +1,11 @@
 import sys
 import logging
-from PySide6.QtWidgets import QMainWindow, QApplication, QLabel, QVBoxLayout, QWidget
-from PySide6.QtCore import Qt, QTimer
+from pathlib import Path
+from PySide6.QtWidgets import QMainWindow
+from PySide6.QtGui import QIcon
+
+from src.ui.bubble_canvas import BubbleCanvas
+from src.ui.theme import Theme
 
 logger = logging.getLogger(__name__)
 
@@ -11,51 +15,29 @@ class MainWindow(QMainWindow):
         self.tick_store = tick_store
         self.db_manager = db_manager
 
-        self.setWindowTitle("Bubbles - Hybrid Order Flow")
-        self.resize(1280, 720)
+        self.setWindowTitle("Bubbles — Hybrid Micro/Macro Order Flow")
+        self.resize(1366, 768)
+        self.setMinimumSize(800, 600)
 
-        # Load icon if available
-        from pathlib import Path
-        from PySide6.QtGui import QIcon
+        # Application Icon
         icon_path = Path(__file__).resolve().parent.parent.parent / "assets" / "icon.png"
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
 
-        # Dark theme base setup
-        self.setStyleSheet("QMainWindow { background-color: #06080C; color: #E8EEF6; }")
+        # Background style
+        self.setStyleSheet(f"QMainWindow {{ background-color: {Theme.BACKGROUND_HEX}; }}")
 
-        # Temporary Placeholder UI until Canvas is built (M1)
-        central_widget = QWidget()
-        layout = QVBoxLayout()
-        layout.setAlignment(Qt.AlignCenter)
+        # Set Bubble Canvas as the central workspace
+        self.canvas = BubbleCanvas(self.tick_store, parent=self)
+        self.setCentralWidget(self.canvas)
 
-        self.status_label = QLabel("Waiting for MT5 EA connection on Port 5558...")
-        self.status_label.setStyleSheet("font-size: 18px; color: #94A3B8; font-family: 'Segoe UI', Inter;")
-        self.status_label.setAlignment(Qt.AlignCenter)
-
-        self.stats_label = QLabel("Ticks loaded: 0")
-        self.stats_label.setStyleSheet("font-size: 14px; color: #22D3EE; font-family: 'Segoe UI', Inter;")
-        self.stats_label.setAlignment(Qt.AlignCenter)
-
-        layout.addWidget(self.status_label)
-        layout.addWidget(self.stats_label)
-        central_widget.setLayout(layout)
-        self.setCentralWidget(central_widget)
-
-        # UI Timer to refresh data view occasionally
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_stats)
-        self.timer.start(500) # Update stats twice a second
-
-    def update_stats(self):
-        # Update placeholder stats
-        if self.tick_store:
-            count = self.tick_store.count
-            self.stats_label.setText(f"Live Ticks in Memory Cache: {count}")
-            if count > 0:
-                self.status_label.setText("Connected & Receiving Data")
-                self.status_label.setStyleSheet("font-size: 18px; color: #34D399; font-family: 'Segoe UI', Inter;")
+    def on_symbol_meta(self, symbol: str, tick_size: float = 0.01):
+        """Notifies canvas when symbol meta arrives."""
+        if hasattr(self, 'canvas'):
+            self.canvas.set_symbol_info(symbol, tick_size)
 
     def closeEvent(self, event):
-        logger.info("MainWindow closing, shutting down application...")
+        logger.info("MainWindow closing, stopping render loops...")
+        if hasattr(self, 'canvas') and self.canvas.render_timer.isActive():
+            self.canvas.render_timer.stop()
         super().closeEvent(event)
