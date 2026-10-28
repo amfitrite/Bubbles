@@ -14,6 +14,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Bubbles - Hybrid Order Flow")
         self.resize(1280, 720)
 
+        # Load icon if available
+        from pathlib import Path
+        from PySide6.QtGui import QIcon
+        icon_path = Path(__file__).resolve().parent.parent.parent / "assets" / "icon.png"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
+
         # Dark theme base setup
         self.setStyleSheet("QMainWindow { background-color: #06080C; color: #E8EEF6; }")
 

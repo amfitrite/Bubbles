@@ -1,6 +1,9 @@
 import sys
+import os
 import logging
+from pathlib import Path
 from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QIcon
 
 # Import components
 from src.logging_setup import setup_logging
@@ -22,6 +25,20 @@ class BubblesApp:
 
         # Initialize TCP Server (M0)
         self.server = BridgeServer(callback=self.on_network_event)
+
+        # Set Application Icon
+        icon_path = Path(__file__).resolve().parent / "assets" / "icon.png"
+        if icon_path.exists():
+            self.app.setWindowIcon(QIcon(str(icon_path)))
+
+            # Ensure the icon shows on the Windows taskbar
+            if os.name == 'nt':
+                try:
+                    import ctypes
+                    myappid = 'bubbles.hybrid.orderflow.1'
+                    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+                except Exception as e:
+                    logger.warning(f"Could not set Windows taskbar icon ID: {e}")
 
         # Initialize UI
         self.window = MainWindow(self.tick_store, self.db_manager)
