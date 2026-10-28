@@ -1,0 +1,18 @@
+--- src/ui/bubble_canvas.py
++++ src/ui/bubble_canvas.py
+@@ -414,6 +414,7 @@
+         if event.button() == Qt.LeftButton:
+             self.is_dragging = True
+             self.last_mouse_pos = event.pos()
++            self.setCursor(Qt.ClosedHandCursor)
+             event.accept()
+
+     def mouseMoveEvent(self, event):
+@@ -427,6 +428,7 @@
+     def mouseReleaseEvent(self, event):
+         if event.button() == Qt.LeftButton:
+             self.is_dragging = False
++            self.unsetCursor()
+             event.accept()
+
+     def mouseDoubleClickEvent(self, event):
