@@ -45,6 +45,9 @@ class BubbleCanvas(QWidget):
         self.last_mouse_pos = QPoint()
         self.hover_mouse_pos = None
 
+        # Cursor styling for better UX
+        self.setCursor(Qt.CrossCursor)
+
         # Engine / Data state
         self.last_rendered_version = -1
         self.visible_bubbles = []
@@ -414,6 +417,7 @@ class BubbleCanvas(QWidget):
         if event.button() == Qt.LeftButton:
             self.is_dragging = True
             self.last_mouse_pos = event.pos()
+            self.setCursor(Qt.ClosedHandCursor)
             event.accept()
 
     def mouseMoveEvent(self, event):
@@ -427,6 +431,7 @@ class BubbleCanvas(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.is_dragging = False
+            self.setCursor(Qt.CrossCursor)
             event.accept()
 
     def mouseDoubleClickEvent(self, event):
