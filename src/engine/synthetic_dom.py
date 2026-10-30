@@ -2,87 +2,37 @@ import numpy as np
 
 class SyntheticDOMLadder:
     """
-    Synthetic Level 2 Depth-of-Market (L2 DOM) and Multi-Interval Accumulator.
-    Supports:
-    1. build_interval_series: Accumulates ALL ticks in each time interval (1ms..4h)
-       into exactly 1 bubble per interval (VWAP + volume sum).
-    2. build_dom_ladder: Price-level ladder accumulation within each interval.
+    Synthetic Level 2 Depth-of-Market (L2 DOM) Ladder Aggregator.
+    
+    Transforms raw streaming ticks into discrete Level 2 price-depth order flow cells
+    accumulated over arbitrary millisecond intervals (e.g. 1ms, 5ms, 100ms, 1s, 1m, 1h, 4h).
+    
+    Rule: Exactly 1 bubble per price level per interval, accumulating all ticks that
+    executed at that price within the given interval window.
     """
     def __init__(self):
         pass
 
-    def build_interval_series(self, ticks_array, interval_ms: int):
-        """
-        Accumulates all ticks falling into each interval window into exactly 1 bubble per interval!
-        interval_ms: 1, 5, 10, 50, 100, 250, 500, 1000, 5000, 60000, etc.
-        """
-        if len(ticks_array) == 0 or interval_ms <= 0:
-            return []
-
-        prices = np.where(ticks_array['last'] > 0, ticks_array['last'], ticks_array['bid'])
-        b_indices = ticks_array['ts'] // interval_ms
-        unique_buckets = np.unique(b_indices)
-
-        bubbles = []
-        for b_idx in unique_buckets:
-            mask = (b_indices == b_idx)
-            sub_vol = ticks_array['volume'][mask]
-            sub_p = prices[mask]
-            sub_side = ticks_array['side'][mask]
-            sub_flags = ticks_array['flags'][mask]
-
-            total_vol = float(np.sum(sub_vol))
-            if total_vol <= 0:
-                continue
-
-            sum_pv = float(np.sum(sub_p * sub_vol))
-            vwap = sum_pv / total_vol
-
-            t_bucket = int(b_idx * interval_ms)
-            time_center = t_bucket + (interval_ms / 2.0)
-
-            buy_mask = (sub_side == 1) | ((sub_flags & 32) != 0)
-            sell_mask = (sub_side == -1) | ((sub_flags & 64) != 0)
-            neutral_mask = ~buy_mask & ~sell_mask
-
-            buy_vol = float(np.sum(sub_vol[buy_mask]))
-            sell_vol = float(np.sum(sub_vol[sell_mask]))
-            if np.any(neutral_mask):
-                neut_vol = float(np.sum(sub_vol[neutral_mask]))
-                buy_vol += neut_vol * 0.5
-                sell_vol += neut_vol * 0.5
-
-            tick_count = len(sub_vol)
-
-            bubbles.append({
-                't_idx': int(b_idx),
-                'p_idx': 0,
-                't_bucket': t_bucket,
-                'x': time_center,
-                'y': vwap,
-                'vwap': vwap,
-                'volume': total_vol,
-                'buy_vol': buy_vol,
-                'sell_vol': sell_vol,
-                'tick_count': tick_count,
-                'interval_ms': interval_ms
-            })
-
-        return bubbles
-
-    def build_dom_ladder(self, ticks_array, interval_ms: int, price_bin: float = 0.01, style: str = 'dom_ladder'):
+    def build_dom_ladder(self, ticks_array, interval_ms: int, tick_size: float = 0.01, style: str = 'dom_ladder'):
         """
         ticks_array: numpy structured array (ts, bid, ask, last, volume, flags, side)
-        interval_ms: accumulation interval in milliseconds
-        price_bin: price grouping height
-        style: 'dom_ladder' or 'vwap'
+        interval_ms: accumulation interval in milliseconds (e.g. 1, 5, 50, 1000, 60000, 3600000)
+        tick_size: minimum price increment (e.g. 0.01)
+        style: 'dom_ladder' (exact discrete price bin) or 'vwap' (volume-weighted price)
+
+        Returns list of accumulated L2 DOM cell dictionaries.
         """
-        if len(ticks_array) == 0 or interval_ms <= 0 or price_bin <= 0:
+        if len(ticks_array) == 0 or interval_ms <= 0 or tick_size <= 0:
             return []
 
+        # Determine price for each tick: prefer 'last', fallback to 'bid'
         prices = np.where(ticks_array['last'] > 0, ticks_array['last'], ticks_array['bid'])
+
+        # Time bucket and Price ladder index
+        # 1. Discrete time bucket index
         t_buckets = (ticks_array['ts'] // interval_ms) * interval_ms
-        p_indices = np.round(prices / price_bin).astype(np.int64)
+        # 2. Discrete price bin index (L2 DOM price row)
+        p_indices = np.round(prices / tick_size).astype(np.int64)
 
         grid = {}
         for i in range(len(ticks_array)):
@@ -97,7 +47,6 @@ class SyntheticDOMLadder:
             price = float(prices[i])
             ts = int(ticks_array['ts'][i])
             side = int(ticks_array['side'][i])
-            flags = int(ticks_array['flags'][i])
 
             if key not in grid:
                 grid[key] = {
@@ -117,11 +66,12 @@ class SyntheticDOMLadder:
             cell['sum_tv'] += ts * vol
             cell['tick_count'] += 1
 
-            if side == 1 or (flags & 32):
+            if side == 1:
                 cell['buy_vol'] += vol
-            elif side == -1 or (flags & 64):
+            elif side == -1:
                 cell['sell_vol'] += vol
             else:
+                # If side is 0, classify aggressor by trade price relative to bid/ask
                 bid = ticks_array['bid'][i]
                 ask = ticks_array['ask'][i]
                 if ask > 0 and price >= ask:
@@ -129,9 +79,11 @@ class SyntheticDOMLadder:
                 elif bid > 0 and price <= bid:
                     cell['sell_vol'] += vol
                 else:
+                    # Split equally if between spread
                     cell['buy_vol'] += vol * 0.5
                     cell['sell_vol'] += vol * 0.5
 
+        # Format into drawing cells
         drawing_cells = []
         for (t_b, p_idx), cell in grid.items():
             vol = cell['total_vol']
@@ -141,8 +93,9 @@ class SyntheticDOMLadder:
             vwap = cell['sum_pv'] / vol
             time_center = cell['sum_tv'] / vol
 
+            # In DOM ladder style, bubble is anchored at the exact discrete price level
             if style == 'dom_ladder':
-                y_val = p_idx * price_bin
+                y_val = p_idx * tick_size
             else:
                 y_val = vwap
 

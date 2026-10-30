@@ -100,7 +100,7 @@ class BubbleRenderer:
             grad.setColorAt(1.0, QColor(10, 15, 22, 230))
 
         painter.setBrush(QBrush(grad))
-        # 1px dark rim to separate bubbles
+        # Add 1px subtle dark rim pen to keep adjacent bubbles distinctly separated
         painter.setPen(QPen(QColor(10, 15, 22, 190), 1))
         painter.drawEllipse(center, float(radius), float(radius))
 
@@ -147,8 +147,8 @@ class BubbleRenderer:
         """
         Draws a bubble according to the 3 modes:
         1. SPLIT_PIE: 2 pie slices (Green Buy vs Red Sell)
-        2. NET_DELTA: Solid bubble colored by net aggressor delta (Green/Red/Gray)
-        3. TOTAL_VOLUME: Solid classic Cyan (#22D3EE) bubble
+        2. NET_DELTA: Solid bubble colored by net aggressor delta
+        3. TOTAL_VOLUME: Solid cyan classic liquidity bubble
         """
         r_int = int(round(radius))
         if r_int < 2:
@@ -159,18 +159,14 @@ class BubbleRenderer:
 
         if mode == "SPLIT_PIE":
             self._draw_split_pie(painter, x, y, r_int, buy_vol, sell_vol, has_glow)
-        elif mode == "TOTAL_VOLUME":
-            # In TOTAL_VOLUME mode, bubble MUST be pure classic Cyan (#22D3EE)!
-            sprite = self.get_sprite(r_int, "classic", has_glow)
-            w = sprite.width()
-            h = sprite.height()
-            painter.drawPixmap(int(x - w / 2.0), int(y - h / 2.0), sprite)
         else:
-            # NET_DELTA mode uses delta_buy, delta_sell, delta_neutral
+            # NET_DELTA or TOTAL_VOLUME / CLASSIC
             sprite = self.get_sprite(r_int, color_type, has_glow)
             w = sprite.width()
             h = sprite.height()
-            painter.drawPixmap(int(x - w / 2.0), int(y - h / 2.0), sprite)
+            dest_x = x - (w / 2.0)
+            dest_y = y - (h / 2.0)
+            painter.drawPixmap(int(dest_x), int(dest_y), sprite)
 
         if alpha < 0.99:
             painter.setOpacity(1.0)
