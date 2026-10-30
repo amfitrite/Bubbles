@@ -3,10 +3,11 @@ from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QColor, QFont, QPen, QBrush
 from PySide6.QtCore import Qt, QRectF
 from src.ui.theme import Theme
+from src.util.time_utils import format_interval_desc
 
 class BubbleTooltip(QWidget):
     """
-    Precision Glass Floating Tooltip for Order Flow details.
+    Precision Glass Floating Tooltip for L2 DOM Order Flow details.
     """
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -16,10 +17,9 @@ class BubbleTooltip(QWidget):
 
     def show_bubble(self, data, screen_x: float, screen_y: float, canvas_width: int, canvas_height: int):
         self.bubble_data = data
-        card_w = 210
-        card_h = 135
+        card_w = 224
+        card_h = 142
 
-        # Position card with slight offset, preventing off-screen overflow
         x = screen_x + 16
         y = screen_y - 20
         if x + card_w > canvas_width - 10:
@@ -49,7 +49,6 @@ class BubbleTooltip(QWidget):
         w = self.width()
         h = self.height()
 
-        # Background glass card
         card_rect = QRectF(0, 0, w, h)
         painter.setBrush(QBrush(Theme.HUD_SURFACE))
         painter.setPen(QPen(Theme.HUD_BORDER, 1))
@@ -62,13 +61,13 @@ class BubbleTooltip(QWidget):
         # 1. Header (Time & Price)
         painter.setFont(QFont("Segoe UI", 9, QFont.Bold))
         painter.setPen(Theme.TEXT_PRIMARY)
-        painter.drawText(10, 20, f"PRICE {d.get('price', 0.0):.2f}")
+        price_val = d.get('price', 0.0)
+        painter.drawText(10, 20, f"PRICE {price_val:.2f}")
 
         painter.setFont(QFont("Segoe UI", 8))
         painter.setPen(Theme.TEXT_MUTED)
         painter.drawText(w - 75, 20, time_str)
 
-        # Divider line
         painter.setPen(QPen(Theme.HUD_BORDER, 1))
         painter.drawLine(10, 27, w - 10, 27)
 
@@ -102,9 +101,12 @@ class BubbleTooltip(QWidget):
         sign = "+" if delta > 0 else ""
         painter.drawText(75, 76, f"{sign}{delta:.1f} ({sign}{delta_pct:.1f}%)")
 
-        # 4. Status / Sample Guard
+        # 4. Status / Sample & Accumulation Window
         ticks = d.get('ticks', 1)
-        sample_text = f"Sample: n={ticks}"
+        int_ms = d.get('interval_ms', 0)
+        int_str = format_interval_desc(int_ms) if int_ms > 0 else "auto"
+
+        sample_text = f"Accum: {int_str} · {ticks} ticks"
         if ticks < 3:
             sample_text += " (low sample)"
 
@@ -124,4 +126,4 @@ class BubbleTooltip(QWidget):
             painter.drawText(10, 114, txt)
         else:
             painter.setPen(Theme.TEXT_MUTED)
-            painter.drawText(10, 114, "Volume Mode: Tick Volume")
+            painter.drawText(10, 114, "L2 DOM Price Level")

@@ -3,11 +3,12 @@ import math
 import numpy as np
 from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QRadialGradient, QBrush, QColor, QPen
-from PySide6.QtCore import Qt, QTimer, QPoint
+from PySide6.QtCore import Qt, QTimer, QPoint, QRectF
 
 from src.engine.camera import Camera
 from src.engine.lod import LODSelector
 from src.engine.micro_grid import MicroGrid
+from src.engine.synthetic_dom import SyntheticDOMLadder
 from src.engine.macro_series import MacroSeries
 from src.engine.modes import ModeClassifier
 from src.ui.bubble_renderer import BubbleRenderer
@@ -15,11 +16,13 @@ from src.ui.hud import HUDOverlay
 from src.ui.tooltip import BubbleTooltip
 from src.ui.theme import Theme
 from src.util.math_utils import robust_p95
+from src.util.time_utils import INTERVAL_OPTIONS, INTERVAL_MAP
 
 class BubbleCanvas(QWidget):
     """
     Core Canvas for rendering order flow bubbles.
-    Implements Hybrid LOD, 3 Modes (Classic, Delta, Imbalance), and Precision Tooltips.
+    Implements Synthetic L2 DOM Price Ladder, Multi-Resolution Interval Accumulation (1ms - 4h),
+    and 3 Modes (Classic, Delta, Imbalance).
     """
     def __init__(self, tick_store, bar_store=None, db_manager=None, parent=None):
         super().__init__(parent)
@@ -28,13 +31,16 @@ class BubbleCanvas(QWidget):
         self.db_manager = db_manager
 
         self.micro_grid = MicroGrid()
+        self.dom_ladder = SyntheticDOMLadder()
         self.macro_series = MacroSeries()
         self.renderer = BubbleRenderer()
         self.camera = Camera(self.width(), self.height())
 
         # Modes and Lenses
-        self.active_mode = "CLASSIC" # 'CLASSIC', 'DELTA', 'IMBALANCE'
-        self.active_lens = "CONTEXT" # 'CONTEXT', 'PRESSURE', 'TRIGGER', 'CUSTOM'
+        self.active_mode = "CLASSIC"
+        self.active_lens = "CONTEXT"
+        self.active_interval = "AUTO"
+        self.interval_options = INTERVAL_OPTIONS
 
         # Overlay HUD & Floating Tooltip
         self.hud = HUDOverlay(self)
@@ -96,11 +102,23 @@ class BubbleCanvas(QWidget):
         self.hud.active_lens = "CUSTOM"
         self.hud.active_mode = mode
 
+    def set_interval(self, interval_name: str):
+        """Sets fixed accumulation interval, e.g. '1ms', '5ms', '1s', '1m', or 'AUTO'."""
+        if interval_name in self.interval_options:
+            self.active_interval = interval_name
+            self.hud.active_interval = interval_name
+            self.last_rendered_version = -1 # Force immediate scene rebuild
+
+    def cycle_interval(self, step: int = 1):
+        """Cycles forward or backward through available accumulation intervals."""
+        current_idx = self.interval_options.index(self.active_interval) if self.active_interval in self.interval_options else 0
+        new_idx = (current_idx + step) % len(self.interval_options)
+        self.set_interval(self.interval_options[new_idx])
+
     def tick_frame(self):
         now_sec = time.time()
         latest_tick_ms = self.tick_store.last_ts if self.tick_store else 0
 
-        # Connection status
         has_recent = (now_sec - self.last_tick_time) < 10.0 if self.last_tick_time > 0 else False
         self.is_connected = (self.tick_store and self.tick_store.count > 0 and has_recent)
 
@@ -115,8 +133,9 @@ class BubbleCanvas(QWidget):
             self.last_rendered_version = current_version
 
         # 3. Update HUD
+        manual_int_ms = INTERVAL_MAP.get(self.active_interval)
         bucket_ms, price_bin, macro_weight, _ = LODSelector.calculate(
-            self.camera.time_span_ms, self.camera.price_range, self.tick_size
+            self.camera.time_span_ms, self.camera.price_range, self.tick_size, manual_interval_ms=manual_int_ms
         )
         self.hud.active_mode = self.active_mode
         self.hud.update_state(
@@ -127,7 +146,8 @@ class BubbleCanvas(QWidget):
             is_connected=self.is_connected,
             follow_live=self.camera.follow_live,
             time_span_ms=self.camera.time_span_ms,
-            macro_weight=macro_weight
+            macro_weight=macro_weight,
+            active_interval=self.active_interval
         )
 
         # 4. Check hover tooltip
@@ -152,10 +172,12 @@ class BubbleCanvas(QWidget):
         min_t = self.camera.min_time
         max_t = self.camera.max_time
 
+        manual_int_ms = INTERVAL_MAP.get(self.active_interval)
         bucket_ms, price_bin, macro_weight, _ = LODSelector.calculate(
-            self.camera.time_span_ms, self.camera.price_range, self.tick_size
+            self.camera.time_span_ms, self.camera.price_range, self.tick_size, manual_interval_ms=manual_int_ms
         )
 
+        # Binary search for ticks in view
         ts_arr = snapshot['ts']
         start_idx = np.searchsorted(ts_arr, min_t, side='left')
         end_idx = np.searchsorted(ts_arr, max_t, side='right')
@@ -167,23 +189,24 @@ class BubbleCanvas(QWidget):
         h = self.height()
 
         # -------------------------------------------------------------
-        # A. MICRO LAYER
+        # A. MICRO / SYNTHETIC L2 DOM LADDER LAYER
         # -------------------------------------------------------------
         if macro_weight < 0.98 and len(visible_ticks) > 0:
             micro_alpha = 1.0 - macro_weight
-            cells = self.micro_grid.build_grid(
+
+            # Build L2 DOM Ladder cells: 1 bubble per price level per interval
+            cells = self.dom_ladder.build_dom_ladder(
                 visible_ticks,
-                self.camera.time_span_ms,
-                bucket_ms,
-                price_bin,
-                style='vwap'
+                interval_ms=bucket_ms,
+                tick_size=self.tick_size,
+                style='dom_ladder'
             )
+
             if cells:
                 vols = np.array([c['volume'] for c in cells])
                 p95_v = robust_p95(vols)
                 p98_v = float(np.percentile(vols, 98)) if len(vols) >= 5 else (p95_v * 1.5)
 
-                # Precompute diagonal imbalances if mode is IMBALANCE
                 imb_map = {}
                 if self.active_mode == "IMBALANCE":
                     imb_map = ModeClassifier.compute_micro_diagonal_imbalances(cells)
@@ -224,6 +247,7 @@ class BubbleCanvas(QWidget):
                         'price': c['y'],
                         'ts': c['x'],
                         'ticks': c['tick_count'],
+                        'interval_ms': c.get('interval_ms', bucket_ms),
                         'imb_type': imb_map.get((c['t_idx'], c['p_idx']), {}).get('imb_type', 'none'),
                         'has_stack': imb_map.get((c['t_idx'], c['p_idx']), {}).get('has_stack', False)
                     })
@@ -279,7 +303,6 @@ class BubbleCanvas(QWidget):
                     if self.active_mode == "DELTA":
                         color_type, _, _ = ModeClassifier.classify_delta(mb['buy_vol'], mb['sell_vol'], vol)
                     elif self.active_mode == "IMBALANCE":
-                        delta_v = mb['buy_vol'] - mb['sell_vol']
                         if mb['buy_vol'] >= 3.0 * max(1.0, mb['sell_vol']):
                             color_type = "imb_buy"
                         elif mb['sell_vol'] >= 3.0 * max(1.0, mb['buy_vol']):
@@ -302,6 +325,7 @@ class BubbleCanvas(QWidget):
                         'price': mb['y'],
                         'ts': mb['x'],
                         'ticks': mb['ticks'],
+                        'interval_ms': bucket_ms,
                         'imb_type': color_type,
                         'has_stack': False
                     })
@@ -315,7 +339,6 @@ class BubbleCanvas(QWidget):
             bubbles.sort(key=lambda b: b['volume'], reverse=True)
             bubbles = bubbles[:3000]
 
-        # Draw larger bubbles in the back, smaller on top
         bubbles.sort(key=lambda b: b['radius'], reverse=True)
         self.visible_bubbles = bubbles
 
@@ -327,7 +350,6 @@ class BubbleCanvas(QWidget):
         mx = self.hover_mouse_pos.x()
         my = self.hover_mouse_pos.y()
 
-        # Find closest bubble within radius + 12px
         closest_b = None
         min_dist = 999999.0
 
@@ -412,8 +434,18 @@ class BubbleCanvas(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
+            pos = event.pos()
+            # Check if clicked on HUD Interval pill: x in [bar_x - 110, bar_x - 12], y in [16, 56]
+            bar_width = 320
+            bar_x = (self.width() - bar_width) / 2.0
+            int_rect = QRectF(bar_x - 110, 16, 98, 40)
+            if int_rect.contains(pos):
+                self.cycle_interval(1)
+                event.accept()
+                return
+
             self.is_dragging = True
-            self.last_mouse_pos = event.pos()
+            self.last_mouse_pos = pos
             event.accept()
 
     def mouseMoveEvent(self, event):
@@ -444,6 +476,17 @@ class BubbleCanvas(QWidget):
         if key == Qt.Key_Space:
             self.camera.follow_live = True
             self.camera.auto_fit_price = True
+            event.accept()
+        elif key == Qt.Key_BracketRight:
+            # Next interval (coarser, e.g. 1ms -> 5ms -> 1s)
+            self.cycle_interval(1)
+            event.accept()
+        elif key == Qt.Key_BracketLeft:
+            # Previous interval (finer, e.g. 1s -> 5ms -> 1ms)
+            self.cycle_interval(-1)
+            event.accept()
+        elif key in (Qt.Key_0, Qt.Key_AsciiTilde, Qt.Key_QuoteLeft):
+            self.set_interval("AUTO")
             event.accept()
         elif key == Qt.Key_Q:
             self.set_lens("CONTEXT")

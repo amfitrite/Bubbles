@@ -1,18 +1,45 @@
 import bisect
 
-# Standard ladder in milliseconds as per README specification
+# Standard ladder in milliseconds including ultra-micro sub-second intervals
 TIME_LADDER_MS = [
-    25, 50, 100, 250, 500,           # Sub-second
-    1_000, 2_000, 5_000, 10_000,     # Seconds
-    15_000, 30_000,                  # Seconds
-    60_000, 120_000, 300_000,        # 1m, 2m, 5m
-    600_000, 900_000, 1_800_000,     # 10m, 15m, 30m
-    3_600_000, 7_200_000,            # 1h, 2h
-    14_400_000, 21_600_000,          # 4h, 6h
-    43_200_000, 86_400_000           # 12h, 1d
+    1, 5, 10, 25, 50, 100, 250, 500,  # Ultra-micro sub-second (1ms - 500ms)
+    1_000, 2_000, 5_000, 10_000,      # Seconds
+    15_000, 30_000,                   # Seconds
+    60_000, 120_000, 300_000,         # 1m, 2m, 5m
+    600_000, 900_000, 1_800_000,      # 10m, 15m, 30m
+    3_600_000, 7_200_000,             # 1h, 2h
+    14_400_000, 21_600_000,           # 4h, 6h
+    43_200_000, 86_400_000            # 12h, 1d
 ]
 
-# Multiple multipliers for tick size ladder
+INTERVAL_OPTIONS = [
+    "AUTO", "1ms", "5ms", "10ms", "50ms", "100ms", "250ms", "500ms",
+    "1s", "5s", "15s", "30s", "1m", "5m", "15m", "1h", "4h"
+]
+
+INTERVAL_MAP = {
+    "1ms": 1,
+    "5ms": 5,
+    "10ms": 10,
+    "25ms": 25,
+    "50ms": 50,
+    "100ms": 100,
+    "250ms": 250,
+    "500ms": 500,
+    "1s": 1_000,
+    "5s": 5_000,
+    "15s": 15_000,
+    "30s": 30_000,
+    "1m": 60_000,
+    "5m": 300_000,
+    "15m": 900_000,
+    "30m": 1_800_000,
+    "1h": 3_600_000,
+    "4h": 14_400_000,
+    "1d": 86_400_000,
+}
+
+# Multipliers for tick size ladder
 TICK_MULTIPLIERS = [
     1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 5000, 10000
 ]
@@ -29,8 +56,7 @@ def nice_time_step(target_ms: float) -> int:
     idx = bisect.bisect_left(TIME_LADDER_MS, target_ms)
     if idx == 0:
         return TIME_LADDER_MS[0]
-    
-    # Compare which one is closer
+
     prev_val = TIME_LADDER_MS[idx - 1]
     curr_val = TIME_LADDER_MS[idx]
     if (target_ms - prev_val) < (curr_val - target_ms):
@@ -43,7 +69,7 @@ def nice_tick_step(target_step: float, tick_size: float = 0.01) -> float:
     """
     if tick_size <= 0:
         tick_size = 0.01
-    
+
     target_multiplier = max(1.0, target_step / tick_size)
     idx = bisect.bisect_left(TICK_MULTIPLIERS, target_multiplier)
     if idx >= len(TICK_MULTIPLIERS):
@@ -56,3 +82,14 @@ def nice_tick_step(target_step: float, tick_size: float = 0.01) -> float:
         multiplier = prev_m if (target_multiplier - prev_m) < (curr_m - target_multiplier) else curr_m
 
     return round(multiplier * tick_size, 6)
+
+def format_interval_desc(ms: float) -> str:
+    """Formats millisecond duration to human readable short label."""
+    if ms < 1000:
+        return f"{int(ms)}ms"
+    elif ms < 60000:
+        return f"{int(ms / 1000)}s"
+    elif ms < 3600000:
+        return f"{int(ms / 60000)}m"
+    else:
+        return f"{int(ms / 3600000)}h"
