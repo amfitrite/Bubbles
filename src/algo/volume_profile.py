@@ -23,49 +23,42 @@ class VolumeProfileEngine:
         if len(ticks) == 0:
             return
 
-        prices = np.where(ticks['last'] > 0, ticks['last'], ticks['bid'])
         volumes = ticks['volume']
-        sides = ticks['side']
-        flags = ticks['flags']
-        ts_arr = ticks['ts']
+        valid = volumes > 0
+        if not np.any(valid):
+            return
 
-        for i in range(len(ticks)):
-            p = float(prices[i])
-            v = float(volumes[i])
-            if v <= 0:
-                continue
+        prices = np.where(ticks['last'] > 0, ticks['last'], ticks['bid'])[valid]
+        vols = volumes[valid]
+        sides = ticks['side'][valid]
+        flags = ticks['flags'][valid]
 
-            t = int(ts_arr[i])
-            side = int(sides[i])
-            f = int(flags[i])
+        # Vectorized Session High/Low
+        high_val = float(np.max(prices))
+        low_val = float(np.min(prices))
+        if high_val > self.session_high:
+            self.session_high = high_val
+        if low_val < self.session_low:
+            self.session_low = low_val
 
-            # Session High/Low
-            if p > self.session_high:
-                self.session_high = p
-            if p < self.session_low:
-                self.session_low = p
+        # Vectorized Session VWAP sums
+        self.sum_pv += float(np.sum(prices * vols))
+        self.total_volume += float(np.sum(vols))
 
-            # Session VWAP
-            self.sum_pv += p * v
-            self.total_volume += v
+        # Vectorized Cumulative Delta
+        is_buy = (sides == 1) | ((flags & 32) != 0)
+        is_sell = ((sides == -1) | ((flags & 64) != 0)) & (~is_buy)
+        buy_delta = float(np.sum(vols[is_buy]))
+        sell_delta = float(np.sum(vols[is_sell]))
+        self.net_cumulative_delta += (buy_delta - sell_delta)
 
-            # Cumulative Delta
-            is_buy = (side == 1) or ((f & 32) != 0)
-            is_sell = (side == -1) or ((f & 64) != 0)
-            if is_buy:
-                self.net_cumulative_delta += v
-            elif is_sell:
-                self.net_cumulative_delta -= v
-
-            # Volume Profile Bins
-            bin_p = round(round(p / self.price_bin_size) * self.price_bin_size, 4)
-            self.profile[bin_p] = self.profile.get(bin_p, 0.0) + v
-
-            # Add to Trajectory path (thinned if same timestamp and price)
-            if not self.trajectory_points or self.trajectory_points[-1][0] != t:
-                self.trajectory_points.append((t, p))
-                if len(self.trajectory_points) > self.max_trajectory_len:
-                    self.trajectory_points = self.trajectory_points[-self.max_trajectory_len:]
+        # Vectorized Volume Profile Bins
+        bin_prices = np.round(np.round(prices / self.price_bin_size) * self.price_bin_size, 4)
+        unique_bins, bin_indices = np.unique(bin_prices, return_inverse=True)
+        bin_vols = np.bincount(bin_indices, weights=vols)
+        for bp, bv in zip(unique_bins, bin_vols):
+            bp_r = round(float(bp), 4)
+            self.profile[bp_r] = self.profile.get(bp_r, 0.0) + float(bv)
 
     def get_macro_structure(self) -> MacroStructure:
         if self.total_volume <= 0:

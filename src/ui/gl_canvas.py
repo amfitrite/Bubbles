@@ -56,6 +56,7 @@ class GLCanvas(BaseCanvas):
         # Visual Snapshot & Layout
         self.current_layout: LayoutResult = None
         self.last_rendered_version = -1
+        self._last_processed_tick_version = -1
         self._last_cam_time = 0.0
         self.min_volume_filter = 0.0
 
@@ -260,8 +261,18 @@ class GLCanvas(BaseCanvas):
         end_idx = np.searchsorted(ts_arr, max_t, side='right')
         visible_ticks = snapshot[start_idx:end_idx]
 
-        # Feed new ticks into continuous algo volume profile tracker
-        self.algo.ingest_new_ticks(snapshot)
+        # Feed newly arrived ticks incrementally into continuous algo volume profile tracker
+        if self._last_processed_tick_version < 0 or ver < self._last_processed_tick_version:
+            # First run or buffer reset/symbol change: initialize and ingest all available ticks
+            self.algo.vp_engine = VolumeProfileEngine(price_bin_size=0.50)
+            self.algo.ingest_new_ticks(snapshot)
+            self._last_processed_tick_version = ver
+        elif ver > self._last_processed_tick_version:
+            # Incremental ingestion of only newly arrived ticks
+            new_tick_count = min(ver - self._last_processed_tick_version, len(snapshot))
+            if new_tick_count > 0:
+                self.algo.ingest_new_ticks(snapshot[-new_tick_count:])
+            self._last_processed_tick_version = ver
 
         # 1. ALGO ENGINE: Compute pure mathematical snapshot
         algo_snapshot = self.algo.compute_snapshot(visible_ticks, int_ms, ver)
@@ -542,15 +553,35 @@ class GLCanvas(BaseCanvas):
             if vp:
                 max_v = max(vp.values()) if vp else 1.0
                 bar_max_w = dom_w * 0.55 # max 55% of column width
+                bin_sz = self.algo.vp_engine.price_bin_size
 
-                for price_bin, vol in vp.items():
-                    if self.camera.min_price <= price_bin <= self.camera.max_price:
-                        sy = self.camera.price_to_screen_y(price_bin)
-                        bar_len = (vol / max_v) * bar_max_w
-                        is_poc = (abs(price_bin - poc) < 0.001)
+                min_p = self.camera.min_price
+                max_p = self.camera.max_price
+                start_bin = math.floor(min_p / bin_sz) * bin_sz
+                end_bin = math.ceil(max_p / bin_sz) * bin_sz
+                n_steps = int(round((end_bin - start_bin) / bin_sz)) + 1
 
-                        color = Theme.VP_BAR_POC if is_poc else Theme.VP_BAR
-                        painter.fillRect(dom_x + 2, int(sy - 2), int(bar_len), 4, color)
+                # If visible bin count is smaller than total profile bins, probe only visible bins
+                if n_steps <= len(vp):
+                    for step_idx in range(n_steps):
+                        price_bin = round(start_bin + step_idx * bin_sz, 4)
+                        vol = vp.get(price_bin, 0.0)
+                        if vol > 0.0:
+                            sy = self.camera.price_to_screen_y(price_bin)
+                            bar_len = (vol / max_v) * bar_max_w
+                            is_poc = (abs(price_bin - poc) < 0.001)
+
+                            color = Theme.VP_BAR_POC if is_poc else Theme.VP_BAR
+                            painter.fillRect(dom_x + 2, int(sy - 2), int(bar_len), 4, color)
+                else:
+                    for price_bin, vol in vp.items():
+                        if min_p <= price_bin <= max_p:
+                            sy = self.camera.price_to_screen_y(price_bin)
+                            bar_len = (vol / max_v) * bar_max_w
+                            is_poc = (abs(price_bin - poc) < 0.001)
+
+                            color = Theme.VP_BAR_POC if is_poc else Theme.VP_BAR
+                            painter.fillRect(dom_x + 2, int(sy - 2), int(bar_len), 4, color)
 
         # 3. Price Scale Ticks
         # Same price step as grid

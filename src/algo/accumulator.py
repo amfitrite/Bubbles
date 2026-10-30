@@ -108,48 +108,65 @@ class OrderFlowAlgoEngine:
         )
 
     def _build_bubbles(self, ticks: np.ndarray, prices: np.ndarray, interval_ms: int) -> List[AlgoBubble]:
+        n_ticks = len(ticks)
+        if n_ticks == 0:
+            return []
+
         ts_buckets = ticks['ts'] // interval_ms
-        unique_buckets = np.unique(ts_buckets)
+        # Contiguous index grouping in O(N): ticks['ts'] is monotonically non-decreasing
+        diffs = np.flatnonzero(np.diff(ts_buckets)) + 1
+        starts = np.r_[0, diffs]
+        ends = np.r_[diffs, n_ticks]
+
+        volumes = ticks['volume']
+        sides = ticks['side']
+        flags = ticks['flags']
+
+        # Vectorized pre-computation across entire slice
+        pv = prices * volumes
+        buy_mask = (sides == 1) | ((flags & 32) != 0)
+        sell_mask = (sides == -1) | ((flags & 64) != 0)
+        neutral_mask = ~buy_mask & ~sell_mask
+
+        # Assign volume proportions per tick (50/50 split for neutral ticks)
+        tick_buy_vol = np.where(buy_mask, volumes, np.where(neutral_mask, volumes * 0.5, 0.0))
+        tick_sell_vol = np.where(sell_mask, volumes, np.where(neutral_mask, volumes * 0.5, 0.0))
+
+        # Vectorized bucket reduction in pure C (O(N) single-pass)
+        tot_vols = np.add.reduceat(volumes, starts)
+        sum_pvs = np.add.reduceat(pv, starts)
+        buy_vols = np.add.reduceat(tick_buy_vol, starts)
+        sell_vols = np.add.reduceat(tick_sell_vol, starts)
+
+        vwaps = np.where(tot_vols > 0, sum_pvs / np.maximum(1e-12, tot_vols), 0.0)
+        deltas = buy_vols - sell_vols
+        delta_ratios = np.where(tot_vols > 0, deltas / np.maximum(1e-12, tot_vols), 0.0)
+        bucket_indices = ts_buckets[starts]
+        time_centers = (bucket_indices * interval_ms) + int(interval_ms / 2.0)
+        tick_counts = ends - starts
 
         bubbles: List[AlgoBubble] = []
         threshold = self.imbalance_ratio_threshold
+        min_imb = self.min_imbalance_volume
 
-        for b_idx in unique_buckets:
-            mask = (ts_buckets == b_idx)
-            sub_vol = ticks['volume'][mask]
-            sub_p = prices[mask]
-            sub_side = ticks['side'][mask]
-            sub_flags = ticks['flags'][mask]
-
-            tot_vol = float(np.sum(sub_vol))
+        for i in range(len(starts)):
+            tot_vol = float(tot_vols[i])
             if tot_vol <= 0:
                 continue
 
-            sum_pv = float(np.sum(sub_p * sub_vol))
-            vwap = sum_pv / tot_vol
-
-            t_bucket = int(b_idx * interval_ms)
-            time_center = t_bucket + int(interval_ms / 2.0)
-
-            buy_mask = (sub_side == 1) | ((sub_flags & 32) != 0)
-            sell_mask = (sub_side == -1) | ((sub_flags & 64) != 0)
-            neutral_mask = ~buy_mask & ~sell_mask
-
-            buy_vol = float(np.sum(sub_vol[buy_mask]))
-            sell_vol = float(np.sum(sub_vol[sell_mask]))
-            if np.any(neutral_mask):
-                neut_vol = float(np.sum(sub_vol[neutral_mask]))
-                buy_vol += neut_vol * 0.5
-                sell_vol += neut_vol * 0.5
-
-            delta = buy_vol - sell_vol
-            delta_ratio = delta / tot_vol if tot_vol > 0 else 0.0
+            vwap = float(vwaps[i])
+            buy_vol = float(buy_vols[i])
+            sell_vol = float(sell_vols[i])
+            delta = float(deltas[i])
+            delta_ratio = float(delta_ratios[i])
+            time_center = int(time_centers[i])
+            t_count = int(tick_counts[i])
 
             # 3:1 Imbalance detection
             imb_state = "BALANCED"
             imb_ratio = 1.0
 
-            if tot_vol >= self.min_imbalance_volume:
+            if tot_vol >= min_imb:
                 if sell_vol <= 0 and buy_vol > 0:
                     imb_state = "BUY_IMBALANCE"
                     imb_ratio = 999.0
@@ -173,7 +190,7 @@ class OrderFlowAlgoEngine:
                 delta_ratio=delta_ratio,
                 imbalance_state=imb_state,
                 imbalance_ratio=imb_ratio,
-                tick_count=len(sub_vol),
+                tick_count=t_count,
                 interval_ms=interval_ms,
                 price_level=vwap
             ))
