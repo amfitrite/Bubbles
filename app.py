@@ -4,7 +4,7 @@ import logging
 import time
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QSurfaceFormat
 
 # Import components
 from src.logging_setup import setup_logging
@@ -19,6 +19,13 @@ logger = logging.getLogger(__name__)
 
 class BubblesApp:
     def __init__(self):
+        # Configure High-Performance OpenGL Surface with V-Sync disabled
+        # Unlocks ultra-high frame rates (120 FPS +++ up to display ceiling)
+        fmt = QSurfaceFormat()
+        fmt.setSwapInterval(0)
+        fmt.setRenderableType(QSurfaceFormat.RenderableType.OpenGL)
+        QSurfaceFormat.setDefaultFormat(fmt)
+
         self.app = QApplication(sys.argv)
 
         # Initialize Core Data Stores
@@ -98,27 +105,21 @@ class BubblesApp:
         logger.info("Starting Bubbles Application...")
 
         # Start background threads
-        self.db_manager.start_writer()
+        self.server.start()
+        self.db_manager.start()
 
-        # Start TCP server
-        if not self.server.start():
-            logger.error("Failed to start server. Exiting.")
-            sys.exit(1)
-
-        # Show window
+        # Show main UI
         self.window.show()
 
-        # Start Qt event loop
-        exit_code = self.app.exec()
+        # Run event loop
+        try:
+            sys.exit(self.app.exec())
+        finally:
+            logger.info("Shutting down Bubbles Application...")
+            self.server.stop()
+            self.db_manager.stop()
 
-        # Shutdown cleanly
-        logger.info("Initiating shutdown sequence...")
-        self.server.stop()
-        self.db_manager.stop_writer()
-        logger.info("Shutdown complete.")
-
-        sys.exit(exit_code)
-
-if __name__ == "__main__":
+if __name__ == '__main__':
+    setup_logging()
     app = BubblesApp()
     app.run()

@@ -9,7 +9,8 @@ class HUDOverlay(QWidget):
     """
     Transparent HUD overlay positioned above the BubbleCanvas.
     Displays symbol, price, 3 Display Modes (Split Pie, Net Delta, Total Volume),
-    Accumulation Interval pill, Settings gear button (⚙), and Floating Navigation Toolbar.
+    Accumulation Interval pill, Real-Time FPS Meter (120+ FPS indicator),
+    Settings gear button (⚙), and Floating Navigation Toolbar.
     """
     settings_clicked = Signal()
     mode_clicked = Signal(str)
@@ -33,11 +34,13 @@ class HUDOverlay(QWidget):
         self.zoom_desc = "2M"
         self.lod_desc = "MICRO"
         self.follow_live = True
+        self.fps = 0.0
+        self.frame_time_ms = 0.0
 
     def update_state(self, symbol: str, last_price: float, tick_count: int,
                      last_tick_time: float, is_connected: bool, follow_live: bool,
                      time_span_ms: float, macro_weight: float, active_interval: str = "AUTO",
-                     active_mode: str = "TOTAL_VOLUME"):
+                     active_mode: str = "TOTAL_VOLUME", fps: float = 0.0, frame_time_ms: float = 0.0):
         if symbol:
             self.symbol = symbol
         if last_price > 0:
@@ -48,6 +51,8 @@ class HUDOverlay(QWidget):
         self.follow_live = follow_live
         self.active_interval = active_interval
         self.active_mode = active_mode
+        self.fps = fps
+        self.frame_time_ms = frame_time_ms
 
         span_sec = time_span_ms / 1000.0
         if span_sec < 60:
@@ -74,7 +79,7 @@ class HUDOverlay(QWidget):
         # 2. Top-Center: 3 Modes (Split Pie / Net Delta / Total Volume) & Interval Pill
         self._draw_top_center(painter, w)
 
-        # 3. Top-Right: Settings ⚙ Button, Live pill, LOD
+        # 3. Top-Right: FPS Meter, Settings ⚙ Button, Live pill, LOD
         self._draw_top_right(painter, w)
 
         # 4. Bottom-Right: Floating Navigation Toolbar (+ / - / Fit / Live)
@@ -168,42 +173,72 @@ class HUDOverlay(QWidget):
         painter.drawText(QRectF(int_pill_x, 34, 104, 20), Qt.AlignCenter, self.active_interval)
 
     def _draw_top_right(self, painter: QPainter, width: int):
-        # Surface for Right HUD tools
-        rect = QRectF(width - 230, 16, 214, 42)
+        # Surface for Right HUD tools: [FPS METER] [LIVE] [MICRO/MACRO] [⚙]
+        panel_w = 330
+        panel_x = width - panel_w - 16
+        rect = QRectF(panel_x, 16, panel_w, 42)
         painter.setBrush(QBrush(Theme.HUD_SURFACE))
         painter.setPen(QPen(Theme.HUD_BORDER, 1))
         painter.drawRoundedRect(rect, 8, 8)
 
-        # Live Pill
+        # 1. Real-Time FPS Meter (Target 120 FPS +++)
+        fps_rect = QRectF(panel_x + 8, 22, 94, 30)
+        fps_val = self.fps
+        if fps_val >= 115.0:
+            fps_color = QColor("#10B981") # Ultra-smooth Emerald Green
+            fps_bg = QColor(16, 185, 129, 32)
+            fps_border = QColor(16, 185, 129, 90)
+            icon = "⚡"
+        elif fps_val >= 58.0:
+            fps_color = QColor("#F59E0B") # Amber
+            fps_bg = QColor(245, 158, 11, 25)
+            fps_border = QColor(245, 158, 11, 80)
+            icon = "●"
+        else:
+            fps_color = QColor("#EF4444") # Red
+            fps_bg = QColor(239, 68, 68, 25)
+            fps_border = QColor(239, 68, 68, 80)
+            icon = "!"
+
+        painter.setBrush(QBrush(fps_bg))
+        painter.setPen(QPen(fps_border, 1))
+        painter.drawRoundedRect(fps_rect, 13, 13)
+
+        font_fps = QFont("Segoe UI", 8, QFont.Bold)
+        painter.setFont(font_fps)
+        painter.setPen(fps_color)
+        fps_text = f"{icon} {fps_val:.0f} FPS" if fps_val > 0 else "-- FPS"
+        painter.drawText(fps_rect, Qt.AlignCenter, fps_text)
+
+        # 2. Live Pill
+        live_rect = QRectF(panel_x + 108, 22, 68, 30)
         if self.follow_live:
-            pill_rect = QRectF(width - 220, 24, 58, 26)
             painter.setBrush(QBrush(QColor(16, 185, 129, 35)))
             painter.setPen(QPen(Theme.STATUS_LIVE, 1))
-            painter.drawRoundedRect(pill_rect, 13, 13)
+            painter.drawRoundedRect(live_rect, 13, 13)
 
             font_live = QFont("Segoe UI", 8, QFont.Bold)
             painter.setFont(font_live)
             painter.setPen(Theme.STATUS_LIVE)
-            painter.drawText(pill_rect, Qt.AlignCenter, "● LIVE")
+            painter.drawText(live_rect, Qt.AlignCenter, "● LIVE")
         else:
-            pill_rect = QRectF(width - 220, 24, 58, 26)
             painter.setBrush(QBrush(QColor(245, 158, 11, 25)))
             painter.setPen(QPen(Theme.STATUS_STALE, 1))
-            painter.drawRoundedRect(pill_rect, 13, 13)
+            painter.drawRoundedRect(live_rect, 13, 13)
 
             font_live = QFont("Segoe UI", 8, QFont.Bold)
             painter.setFont(font_live)
             painter.setPen(Theme.STATUS_STALE)
-            painter.drawText(pill_rect, Qt.AlignCenter, "PAUSED")
+            painter.drawText(live_rect, Qt.AlignCenter, "PAUSED")
 
-        # LOD Badge (MICRO / MACRO)
+        # 3. LOD Badge (MICRO / MACRO)
         font_lod = QFont("Segoe UI", 9, QFont.DemiBold)
         painter.setFont(font_lod)
         painter.setPen(Theme.TEXT_PRIMARY)
-        painter.drawText(QRectF(width - 150, 16, 68, 42), Qt.AlignCenter, self.lod_desc)
+        painter.drawText(QRectF(panel_x + 182, 16, 68, 42), Qt.AlignCenter, self.lod_desc)
 
-        # Gear Icon Button ⚙
-        gear_rect = QRectF(width - 70, 22, 30, 30)
+        # 4. Gear Icon Button ⚙
+        gear_rect = QRectF(panel_x + panel_w - 38, 22, 30, 30)
         painter.setBrush(QBrush(QColor(255, 255, 255, 10)))
         painter.setPen(QPen(Theme.HUD_BORDER, 1))
         painter.drawRoundedRect(gear_rect, 6, 6)
@@ -236,7 +271,7 @@ class HUDOverlay(QWidget):
             painter.drawText(b_rect, Qt.AlignCenter, text)
 
     def _draw_bottom_hints(self, painter: QPainter, width: int, height: int):
-        hint = "Left-Drag: Pan · Right-Drag: Price/Time Stretch · Wheel: Zoom · [ / ]: Interval (1ms..4h) · S: Settings Drawer"
+        hint = "Left-Drag: Pan · Right-Drag: Price/Time Stretch · Wheel: Zoom · [ / ]: Interval (1ms..4h) · S: Settings Drawer · Target: 120+ FPS"
         painter.setFont(QFont("Segoe UI", 9))
         painter.setPen(Theme.TEXT_MUTED)
         rect = QRectF(0, height - 30, width, 22)
@@ -249,8 +284,10 @@ class HUDOverlay(QWidget):
         bar_w = 340
         bar_x = (w - bar_w) / 2.0
 
-        # 1. Check Settings ⚙ button: width - 70, 22, 30, 30
-        gear_rect = QRectF(w - 70, 22, 30, 30)
+        # 1. Check Settings ⚙ button: panel_x + panel_w - 38, 22, 30, 30
+        panel_w = 330
+        panel_x = w - panel_w - 16
+        gear_rect = QRectF(panel_x + panel_w - 38, 22, 30, 30)
         if gear_rect.contains(pos):
             self.settings_clicked.emit()
             event.accept()
