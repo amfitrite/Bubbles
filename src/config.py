@@ -18,6 +18,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "min_volume_filter": 0.0,
     "auto_fit_price": True,
     "follow_live": True,             # Auto scroll
+    "auto_center": True,            # Auto center on market price
     "window": {
         "width": 1366,
         "height": 768,

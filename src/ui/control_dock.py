@@ -14,6 +14,7 @@ class ControlDock(QWidget):
     scale_changed = Signal(float)
     autofit_toggled = Signal()
     follow_live_toggled = Signal()
+    autocenter_toggled = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -23,6 +24,7 @@ class ControlDock(QWidget):
         self.size_scale = 1.0
         self.auto_fit = True
         self.follow_live = True
+        self.auto_center = True
 
         # Complete range of timeframes including 10s, 15s, 30s
         self.intervals = [
@@ -32,17 +34,18 @@ class ControlDock(QWidget):
         ]
 
     def set_state(self, active_interval: str, gap: float, scale: float,
-                  auto_fit: bool, follow_live: bool):
+                  auto_fit: bool, follow_live: bool, auto_center: bool = True):
         self.active_interval = active_interval
         self.min_gap_px = gap
         self.size_scale = scale
         self.auto_fit = auto_fit
         self.follow_live = follow_live
+        self.auto_center = auto_center
         self.update()
 
     def _get_interval_rects(self, w: float):
         n = len(self.intervals)
-        right_panel_w = 425.0
+        right_panel_w = 515.0
         avail = max(300.0, w - right_panel_w - 20.0)
         btn_w = max(30.0, min(42.0, (avail - (n - 1) * 3.0) / n))
         spacing = 3.0
@@ -59,7 +62,7 @@ class ControlDock(QWidget):
     def _get_right_control_rects(self, w: float):
         btn_y = 5.0
         btn_h = 22.0
-        rx = w - 425.0
+        rx = w - 515.0
 
         rect_gm = QRectF(rx + 54, btn_y, 18, btn_h)
         rect_gp = QRectF(rx + 74, btn_y, 18, btn_h)
@@ -71,8 +74,11 @@ class ControlDock(QWidget):
         fx = sx + 120
         rect_fit = QRectF(fx, btn_y, 36, btn_h)
 
-        lx = fx + 42
-        rect_autoscroll = QRectF(lx, btn_y, 102, btn_h)
+        cx = fx + 42
+        rect_autocenter = QRectF(cx, btn_y, 98, btn_h)
+
+        lx = cx + 102
+        rect_autoscroll = QRectF(lx, btn_y, 98, btn_h)
 
         return {
             'rx': rx,
@@ -83,6 +89,8 @@ class ControlDock(QWidget):
             'rect_sp': rect_sp,
             'fx': fx,
             'rect_fit': rect_fit,
+            'cx': cx,
+            'rect_autocenter': rect_autocenter,
             'lx': lx,
             'rect_autoscroll': rect_autoscroll
         }
@@ -157,6 +165,23 @@ class ControlDock(QWidget):
         painter.setPen(Theme.TEXT_PRIMARY if self.auto_fit else Theme.TEXT_MUTED)
         painter.drawText(rc['rect_fit'], Qt.AlignCenter, "FIT")
 
+        # AUTO CENTER Button
+        r_ac = rc['rect_autocenter']
+        if self.auto_center:
+            painter.setBrush(QBrush(QColor(16, 185, 129, 35)))
+            painter.setPen(QPen(Theme.STATUS_LIVE, 1.0))
+            painter.drawRoundedRect(r_ac, 2, 2)
+            painter.setFont(QFont("Consolas", 8, QFont.Bold))
+            painter.setPen(Theme.STATUS_LIVE)
+            painter.drawText(r_ac, Qt.AlignCenter, "● AUTO CENTER")
+        else:
+            painter.setBrush(QBrush(QColor(18, 22, 29)))
+            painter.setPen(QPen(Theme.BORDER_HAIRLINE, 1.0))
+            painter.drawRoundedRect(r_ac, 2, 2)
+            painter.setFont(QFont("Consolas", 8, QFont.Bold))
+            painter.setPen(Theme.TEXT_MUTED)
+            painter.drawText(r_ac, Qt.AlignCenter, "▶ AUTO CENTER")
+
         # AUTO SCROLL Button
         r_asc = rc['rect_autoscroll']
         if self.follow_live:
@@ -213,6 +238,11 @@ class ControlDock(QWidget):
 
         if rc['rect_fit'].contains(pos):
             self.autofit_toggled.emit()
+            event.accept()
+            return
+
+        if rc['rect_autocenter'].contains(pos):
+            self.autocenter_toggled.emit()
             event.accept()
             return
 

@@ -99,6 +99,10 @@ class MainWindow(QMainWindow):
         self.canvas.toggle_autofit(saved_autofit)
         self.dock.auto_fit = saved_autofit
 
+        saved_center = bool(settings.get("auto_center", True))
+        self.canvas.toggle_auto_center(saved_center)
+        self.dock.auto_center = saved_center
+
         saved_live = bool(settings.get("follow_live", True))
         self.canvas.toggle_follow_live(saved_live)
         self.dock.follow_live = saved_live
@@ -115,6 +119,7 @@ class MainWindow(QMainWindow):
         self.dock.gap_changed.connect(self._on_gap_changed)
         self.dock.scale_changed.connect(self._on_scale_changed)
         self.dock.autofit_toggled.connect(self._on_autofit_toggled)
+        self.dock.autocenter_toggled.connect(self._on_autocenter_toggled)
         self.dock.follow_live_toggled.connect(self._on_follow_live_toggled)
 
         # Settings Panel -> Canvas & Settings
@@ -124,6 +129,7 @@ class MainWindow(QMainWindow):
         self.settings_panel.min_volume_changed.connect(self._on_min_volume_changed)
         self.settings_panel.fps_changed.connect(self._on_fps_target_changed)
         self.settings_panel.autofit_toggled.connect(self._on_autofit_toggled)
+        self.settings_panel.autocenter_toggled.connect(self._on_autocenter_toggled)
         self.settings_panel.follow_live_toggled.connect(self._on_follow_live_toggled)
 
         # Canvas -> Header & Dock
@@ -166,6 +172,10 @@ class MainWindow(QMainWindow):
         self.canvas.toggle_autofit(val)
         settings.set("auto_fit_price", self.canvas.camera.auto_fit_price)
 
+    def _on_autocenter_toggled(self, val: bool = None):
+        self.canvas.toggle_auto_center(val)
+        settings.set("auto_center", self.canvas.camera.auto_center)
+
     def _on_follow_live_toggled(self, val: bool = None):
         self.canvas.toggle_follow_live(val)
         settings.set("follow_live", self.canvas.camera.follow_live)
@@ -181,7 +191,8 @@ class MainWindow(QMainWindow):
                 self.canvas.camera.follow_live,
                 self.canvas.algo.imbalance_ratio_threshold,
                 self.canvas.min_volume_filter,
-                self.canvas.fps_target
+                self.canvas.fps_target,
+                autocenter=self.canvas.camera.auto_center
             )
             # Position flush to the right edge below header
             h = self.height() - self.header.height()
@@ -230,6 +241,7 @@ class MainWindow(QMainWindow):
         settings.set("imbalance_ratio", self.canvas.algo.imbalance_ratio_threshold, auto_save=False)
         settings.set("min_volume_filter", self.canvas.min_volume_filter, auto_save=False)
         settings.set("auto_fit_price", self.canvas.camera.auto_fit_price, auto_save=False)
+        settings.set("auto_center", self.canvas.camera.auto_center, auto_save=False)
         settings.set("follow_live", self.canvas.camera.follow_live, auto_save=False)
 
         # 3. Commit to disk

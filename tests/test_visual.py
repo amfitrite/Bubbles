@@ -81,5 +81,29 @@ class TestVisualEngine(unittest.TestCase):
         canvas._rebuild_scene(1000)
         self.assertIsNotNone(canvas.current_layout)
 
+    def test_auto_center_functionality(self):
+        # 1. Camera auto_center tracking
+        self.camera.auto_center = True
+        self.camera.center_price = 4000.0
+        self.camera.update_auto_center(4005.0)
+        # Should lerp towards 4005.0
+        self.assertGreater(self.camera.center_price, 4000.0)
+        self.assertLessEqual(self.camera.center_price, 4005.0)
+
+        # 2. Vertical drag pauses auto_center
+        self.camera.pan(0.0, 50.0) # vertical drag
+        self.assertFalse(self.camera.auto_center)
+
+        # 3. Horizontal drag pauses follow_live
+        self.camera.follow_live = True
+        self.camera.pan(50.0, 0.0) # horizontal drag
+        self.assertFalse(self.camera.follow_live)
+
+        # 4. Reset camera restores both
+        self.camera.reset_to_recent(latest_time_ms=1000000, current_price=4010.0)
+        self.assertTrue(self.camera.auto_center)
+        self.assertTrue(self.camera.follow_live)
+        self.assertEqual(self.camera.center_price, 4010.0)
+
 if __name__ == "__main__":
     unittest.main()

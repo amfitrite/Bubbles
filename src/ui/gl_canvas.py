@@ -32,7 +32,7 @@ class GLCanvas(BaseCanvas):
     with TradingView Macrostructure (Right DOM Volume Profile, Session High/Low/VWAP/POC, Time Axis).
     """
     telemetry_updated = Signal(str, float, bool, float, float, str, str)
-    dock_updated = Signal(str, float, float, bool, bool)
+    dock_updated = Signal(str, float, float, bool, bool, bool)
 
     def __init__(self, tick_store: TickStore, parent=None):
         super().__init__(parent)
@@ -174,6 +174,14 @@ class GLCanvas(BaseCanvas):
         self.last_rendered_version = -1
         self.update()
 
+    def toggle_auto_center(self, val: bool = None):
+        new_val = not self.camera.auto_center if val is None else val
+        self.camera.auto_center = new_val
+        if new_val and self.last_price > 0:
+            self.camera.center_price = self.last_price
+        self.last_rendered_version = -1
+        self.update()
+
     def reset_camera(self):
         latest_ts = self.tick_store.last_ts if self.tick_store else 0
         self.camera.reset_to_recent(latest_ts, self.last_price)
@@ -189,6 +197,9 @@ class GLCanvas(BaseCanvas):
 
         if self.camera.follow_live and latest_tick_ms > 0:
             self.camera.update_follow_live(latest_tick_ms)
+
+        if self.camera.auto_center and self.last_price > 0:
+            self.camera.update_auto_center(self.last_price)
 
         current_ver = self.tick_store.version if self.tick_store else 0
         cam_time = self.camera.max_time
@@ -210,7 +221,7 @@ class GLCanvas(BaseCanvas):
             self.dock_updated.emit(
                 self.active_interval, self.layout_engine.min_gap_px,
                 self.layout_engine.size_scale, self.camera.auto_fit_price,
-                self.camera.follow_live
+                self.camera.follow_live, self.camera.auto_center
             )
 
         self._check_hover_tooltip()
@@ -403,24 +414,44 @@ class GLCanvas(BaseCanvas):
         self._draw_time_axis(painter, w, h, chart_w, chart_h, time_h)
 
         # -------------------------------------------------------------
-        # 8. FLOATING AUTO SCROLL PILL (When paused by user navigation)
+        # 8. FLOATING AUTO SCROLL & AUTO CENTER PILLS (When paused by user navigation)
         # -------------------------------------------------------------
-        if not self.camera.follow_live:
-            pill_w = 116
-            pill_h = 24
-            pill_x = chart_w - pill_w - 12
-            pill_y = chart_h - pill_h - 10
-            self._pill_rect = QRectF(pill_x, pill_y, pill_w, pill_h)
+        pill_w = 116
+        pill_h = 24
+        pill_y = chart_h - pill_h - 10
+        right_x = chart_w - 12
 
+        show_scroll = not self.camera.follow_live
+        show_center = not self.camera.auto_center
+
+        if show_scroll and show_center:
+            self._pill_scroll_rect = QRectF(right_x - pill_w, pill_y, pill_w, pill_h)
+            self._pill_center_rect = QRectF(right_x - (pill_w * 2) - 8, pill_y, pill_w, pill_h)
+        elif show_scroll:
+            self._pill_scroll_rect = QRectF(right_x - pill_w, pill_y, pill_w, pill_h)
+            self._pill_center_rect = None
+        elif show_center:
+            self._pill_center_rect = QRectF(right_x - pill_w, pill_y, pill_w, pill_h)
+            self._pill_scroll_rect = None
+        else:
+            self._pill_scroll_rect = None
+            self._pill_center_rect = None
+
+        if self._pill_scroll_rect:
             painter.setBrush(QBrush(QColor(15, 23, 42, 230)))
             painter.setPen(QPen(Theme.STATUS_LIVE, 1.2))
-            painter.drawRoundedRect(self._pill_rect, 12, 12)
-
+            painter.drawRoundedRect(self._pill_scroll_rect, 12, 12)
             painter.setFont(QFont("Consolas", 8, QFont.Bold))
             painter.setPen(Theme.STATUS_LIVE)
-            painter.drawText(self._pill_rect, Qt.AlignCenter, "▶ AUTO SCROLL")
-        else:
-            self._pill_rect = None
+            painter.drawText(self._pill_scroll_rect, Qt.AlignCenter, "▶ AUTO SCROLL")
+
+        if self._pill_center_rect:
+            painter.setBrush(QBrush(QColor(15, 23, 42, 230)))
+            painter.setPen(QPen(Theme.STATUS_LIVE, 1.2))
+            painter.drawRoundedRect(self._pill_center_rect, 12, 12)
+            painter.setFont(QFont("Consolas", 8, QFont.Bold))
+            painter.setPen(Theme.STATUS_LIVE)
+            painter.drawText(self._pill_center_rect, Qt.AlignCenter, "▶ AUTO CENTER")
 
         painter.end()
 
@@ -684,9 +715,16 @@ class GLCanvas(BaseCanvas):
         event.accept()
 
     def mousePressEvent(self, event):
+        pos = event.position()
         # Click on floating auto-scroll pill button
-        if hasattr(self, '_pill_rect') and self._pill_rect and self._pill_rect.contains(event.position()):
+        if hasattr(self, '_pill_scroll_rect') and self._pill_scroll_rect and self._pill_scroll_rect.contains(pos):
             self.toggle_follow_live(True)
+            event.accept()
+            return
+
+        # Click on floating auto-center pill button
+        if hasattr(self, '_pill_center_rect') and self._pill_center_rect and self._pill_center_rect.contains(pos):
+            self.toggle_auto_center(True)
             event.accept()
             return
 
@@ -699,6 +737,15 @@ class GLCanvas(BaseCanvas):
             self.last_mouse_pos = event.pos()
             event.accept()
 
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            # Double click on canvas or price ladder instantly re-centers price and time
+            self.toggle_auto_center(True)
+            self.toggle_follow_live(True)
+            self.last_rendered_version = -1
+            self.update()
+            event.accept()
+
     def mouseMoveEvent(self, event):
         delta = event.pos() - self.last_mouse_pos
         self.last_mouse_pos = event.pos()
@@ -708,8 +755,15 @@ class GLCanvas(BaseCanvas):
         elif self.is_right_dragging:
             self.camera.stretch(delta.x(), delta.y())
 
-        # Update cursor when hovering over the auto-scroll button
-        if hasattr(self, '_pill_rect') and self._pill_rect and self._pill_rect.contains(event.position()):
+        # Update cursor when hovering over floating pills
+        pos = event.position()
+        hovering_pill = False
+        if hasattr(self, '_pill_scroll_rect') and self._pill_scroll_rect and self._pill_scroll_rect.contains(pos):
+            hovering_pill = True
+        elif hasattr(self, '_pill_center_rect') and self._pill_center_rect and self._pill_center_rect.contains(pos):
+            hovering_pill = True
+
+        if hovering_pill:
             self.setCursor(Qt.PointingHandCursor)
         else:
             self.setCursor(Qt.ArrowCursor)
@@ -745,5 +799,7 @@ class GLCanvas(BaseCanvas):
             self.toggle_autofit()
         elif key in (Qt.Key_L, Qt.Key_A):
             self.toggle_follow_live()
+        elif key == Qt.Key_C:
+            self.toggle_auto_center()
         else:
             super().keyPressEvent(event)

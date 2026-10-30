@@ -25,6 +25,7 @@ class Camera:
         self.price_range = 4.0          # Default price height ($4 for gold)
 
         self.follow_live = True
+        self.auto_center = True
         self.auto_fit_price = True
 
         self.MIN_TIME_SPAN = 1_000.0           # 1 second
@@ -76,8 +77,11 @@ class Camera:
         dp = (dy_px / self.chart_height) * self.price_range
         self.center_time_ms += dt
         self.center_price += dp
-        self.follow_live = False
-        self.auto_fit_price = False
+        if abs(dx_px) > 0:
+            self.follow_live = False
+        if abs(dy_px) > 0:
+            self.auto_center = False
+            self.auto_fit_price = False
 
     def stretch(self, dx_px: float, dy_px: float):
         if abs(dy_px) > 0:
@@ -125,6 +129,14 @@ class Camera:
         target_center = latest_time_ms - (0.30 * self.time_span_ms)
         self.center_time_ms = target_center
 
+    def update_auto_center(self, current_price: float):
+        if not self.auto_center or current_price <= 0:
+            return
+        if self.center_price <= 0.0 or abs(self.center_price - current_price) > 500.0:
+            self.center_price = current_price
+        else:
+            self.center_price = lerp(self.center_price, current_price, 0.20)
+
     def update_auto_fit(self, min_p: float, max_p: float, tick_size: float = 0.01):
         if not self.auto_fit_price or min_p is None or max_p is None or min_p > max_p:
             return
@@ -155,7 +167,8 @@ class Camera:
         target_center = (min_p + max_p) / 2.0
 
         self.price_range = lerp(self.price_range, target_range, 0.12)
-        self.center_price = lerp(self.center_price, target_center, 0.12)
+        if not self.auto_center:
+            self.center_price = lerp(self.center_price, target_center, 0.12)
 
     def reset_to_recent(self, latest_time_ms: float = None, current_price: float = None):
         self.time_span_ms = 120_000.0
@@ -165,4 +178,5 @@ class Camera:
             self.center_price = current_price
             self.price_range = max(2.0, self.price_range)
         self.follow_live = True
+        self.auto_center = True
         self.auto_fit_price = True

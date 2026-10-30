@@ -17,6 +17,7 @@ class SettingsPanel(QWidget):
     min_volume_changed = Signal(float)
     autofit_toggled = Signal(bool)
     follow_live_toggled = Signal(bool)
+    autocenter_toggled = Signal(bool)
     fps_changed = Signal(str)
 
     def __init__(self, parent=None):
@@ -140,6 +141,10 @@ class SettingsPanel(QWidget):
         self.btn_autofit.clicked.connect(self._toggle_autofit)
         layout.addWidget(self.btn_autofit)
 
+        self.btn_autocenter = QPushButton("AUTO CENTER: ON")
+        self.btn_autocenter.clicked.connect(self._toggle_autocenter)
+        layout.addWidget(self.btn_autocenter)
+
         self.btn_live = QPushButton("AUTO SCROLL: ON")
         self.btn_live.clicked.connect(self._toggle_live)
         layout.addWidget(self.btn_live)
@@ -147,6 +152,7 @@ class SettingsPanel(QWidget):
         layout.addStretch()
 
         self._autofit_val = True
+        self._autocenter_val = True
         self._live_val = True
         self._fps_target = "60"
         self._refresh_fps_buttons()
@@ -194,19 +200,27 @@ class SettingsPanel(QWidget):
         self.btn_autofit.setText(f"AUTO-FIT PRICE: {'ON' if self._autofit_val else 'OFF'}")
         self.autofit_toggled.emit(self._autofit_val)
 
+    def _toggle_autocenter(self):
+        self._autocenter_val = not self._autocenter_val
+        self.btn_autocenter.setText(f"AUTO CENTER: {'ON' if self._autocenter_val else 'OFF'}")
+        self.autocenter_toggled.emit(self._autocenter_val)
+
     def _toggle_live(self):
         self._live_val = not self._live_val
         self.btn_live.setText(f"AUTO SCROLL: {'ON' if self._live_val else 'OFF'}")
         self.follow_live_toggled.emit(self._live_val)
 
     def update_values(self, gap: float, scale: float, autofit: bool, live: bool,
-                      imbalance_ratio: float = 3.0, min_vol: float = 0.0, fps_target: str = "60"):
+                      imbalance_ratio: float = 3.0, min_vol: float = 0.0, fps_target: str = "60",
+                      autocenter: bool = True):
         self.slider_gap.setValue(int(gap))
         self.slider_scale.setValue(int(scale * 10))
         self.slider_imb.setValue(int(imbalance_ratio * 10))
         self.slider_min_vol.setValue(int(min_vol))
         self._autofit_val = autofit
         self.btn_autofit.setText(f"AUTO-FIT PRICE: {'ON' if autofit else 'OFF'}")
+        self._autocenter_val = autocenter
+        self.btn_autocenter.setText(f"AUTO CENTER: {'ON' if autocenter else 'OFF'}")
         self._live_val = live
         self.btn_live.setText(f"AUTO SCROLL: {'ON' if live else 'OFF'}")
         self._fps_target = fps_target
