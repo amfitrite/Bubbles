@@ -99,6 +99,7 @@ class BubbleCanvas(BaseCanvasClass):
         self.hover_mouse_pos = None
 
         # Data state
+        self._price_initialized = False
         self.last_rendered_version = -1
         self.visible_bubbles = []
         self.p95_volume = 1.0
@@ -130,6 +131,7 @@ class BubbleCanvas(BaseCanvasClass):
             self.symbol = symbol
         if tick_size > 0:
             self.tick_size = tick_size
+        self._price_initialized = False
 
     def toggle_settings_drawer(self):
         if self.settings_drawer.isVisible():
@@ -252,6 +254,11 @@ class BubbleCanvas(BaseCanvasClass):
         self.last_price = float(last_t['last'] if last_t['last'] > 0 else last_t['bid'])
         self.last_tick_time = time.time()
 
+        # Center camera on market price if uninitialized or price moved far away
+        if (not self._price_initialized or self.camera.center_price <= 0.0 or abs(self.camera.center_price - self.last_price) > 500.0) and self.last_price > 0:
+            self.camera.center_price = self.last_price
+            self._price_initialized = True
+
         min_t = self.camera.min_time
         max_t = self.camera.max_time
 
@@ -271,8 +278,9 @@ class BubbleCanvas(BaseCanvasClass):
         h = self.height()
 
         # Visual Spacing: calculate available pixel height per price bin
+        effective_bin = max(self.tick_size, price_bin)
         px_per_price_unit = h / max(0.01, self.camera.price_range)
-        price_row_height_px = self.tick_size * px_per_price_unit
+        price_row_height_px = effective_bin * px_per_price_unit
         max_cell_radius = max(3.0, (price_row_height_px / 2.0) - self.spacing_padding)
 
         # -------------------------------------------------------------
@@ -285,7 +293,7 @@ class BubbleCanvas(BaseCanvasClass):
             cells = self.dom_ladder.build_dom_ladder(
                 visible_ticks,
                 interval_ms=bucket_ms,
-                tick_size=self.tick_size,
+                tick_size=effective_bin,
                 style='dom_ladder'
             )
 
@@ -535,7 +543,7 @@ class BubbleCanvas(BaseCanvasClass):
         elif modifiers & Qt.ControlModifier:
             zoom_time = False
 
-        self.camera.zoom(factor, anchor_px=pos.x(), anchor_py=pos.y(),
+        self.camera.zoom(factor, anchor_x=pos.x(), anchor_y=pos.y(),
                          zoom_time=zoom_time, zoom_price=zoom_price)
         self.last_rendered_version = -1
         event.accept()

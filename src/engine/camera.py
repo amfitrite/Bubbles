@@ -10,7 +10,7 @@ class Camera:
         self.time_span_ms = 120_000.0  # 2 minutes default (micro range)
         now_ms = time.time() * 1000.0
         self.center_time_ms = now_ms
-        self.center_price = 2400.0
+        self.center_price = 0.0 # Will snap to real live price on first tick!
         self.price_range = 5.0  # 5 dollars default for gold
 
         self.follow_live = True
@@ -84,11 +84,18 @@ class Camera:
             self.follow_live = False
 
     def zoom(self, factor: float, anchor_x: float = None, anchor_y: float = None,
-             zoom_time: bool = True, zoom_price: bool = True):
+             zoom_time: bool = True, zoom_price: bool = True,
+             anchor_px: float = None, anchor_py: float = None):
         """
         Cursor-anchored zoom.
+        Supports both anchor_x/y and anchor_px/py for seamless compatibility.
         factor > 1.0 zooms in (smaller span), factor < 1.0 zooms out.
         """
+        if anchor_x is None and anchor_px is not None:
+            anchor_x = anchor_px
+        if anchor_y is None and anchor_py is not None:
+            anchor_y = anchor_py
+
         anchor_t = self.screen_x_to_time(anchor_x) if anchor_x is not None else self.center_time_ms
         anchor_p = self.screen_y_to_price(anchor_y) if anchor_y is not None else self.center_price
 
@@ -121,7 +128,8 @@ class Camera:
         target_range = max(min_range, (max_p - min_p) * 1.35)
         target_center = (min_p + max_p) / 2.0
 
-        if target_range > self.price_range:
+        # If camera center is completely off (more than half price range away or uninitialized), snap instantly!
+        if self.center_price <= 0.0 or abs(self.center_price - target_center) > (self.price_range * 0.6) or target_range > self.price_range:
             self.price_range = target_range
             self.center_price = target_center
         else:
