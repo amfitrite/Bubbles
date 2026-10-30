@@ -45,7 +45,6 @@ class Camera:
         return ((t - self.min_time) / self.time_span_ms) * self.width
 
     def price_to_screen_y(self, p: float) -> float:
-        # Screen Y=0 is at the top (highest price)
         return ((self.max_price - p) / self.price_range) * self.height
 
     def screen_x_to_time(self, x: float) -> float:
@@ -66,6 +65,24 @@ class Camera:
         self.follow_live = False
         self.auto_fit_price = False
 
+    def stretch(self, dx_px: float, dy_px: float):
+        """
+        Interactive stretch / squeeze via right-click drag:
+        - dy_px stretches or squeezes price range vertically
+        - dx_px stretches or squeezes time span horizontally
+        """
+        if abs(dy_px) > 0:
+            price_factor = 1.0 + (dy_px / (self.height * 0.4))
+            price_factor = clamp(price_factor, 0.7, 1.4)
+            self.price_range = max(self.MIN_PRICE_RANGE, self.price_range * price_factor)
+            self.auto_fit_price = False
+
+        if abs(dx_px) > 0:
+            time_factor = 1.0 + (dx_px / (self.width * 0.4))
+            time_factor = clamp(time_factor, 0.7, 1.4)
+            self.time_span_ms = clamp(self.time_span_ms * time_factor, self.MIN_TIME_SPAN, self.MAX_TIME_SPAN)
+            self.follow_live = False
+
     def zoom(self, factor: float, anchor_x: float = None, anchor_y: float = None,
              zoom_time: bool = True, zoom_price: bool = True):
         """
@@ -77,7 +94,6 @@ class Camera:
 
         if zoom_time:
             new_span = clamp(self.time_span_ms / factor, self.MIN_TIME_SPAN, self.MAX_TIME_SPAN)
-            # Re-anchor time
             if anchor_x is not None:
                 ratio_x = anchor_x / self.width
                 self.center_time_ms = anchor_t + (0.5 - ratio_x) * new_span
@@ -85,7 +101,6 @@ class Camera:
 
         if zoom_price:
             new_range = max(self.MIN_PRICE_RANGE, self.price_range / factor)
-            # Re-anchor price
             if anchor_y is not None:
                 ratio_y = anchor_y / self.height
                 self.center_price = anchor_p - (0.5 - ratio_y) * new_range
@@ -93,37 +108,27 @@ class Camera:
             self.auto_fit_price = False
 
     def update_follow_live(self, latest_time_ms: float):
-        """
-        If follow_live is active, positions latest_time_ms at 85% of screen width.
-        """
         if not self.follow_live or latest_time_ms <= 0:
             return
         target_center = latest_time_ms - (0.35 * self.time_span_ms)
-        # Smooth lerp or direct snap
         self.center_time_ms = target_center
 
     def update_auto_fit(self, min_p: float, max_p: float, tick_size: float = 0.01):
-        """
-        Adjusts price viewport to encompass visible bubble price bounds with hysteresis.
-        """
         if not self.auto_fit_price or min_p is None or max_p is None or min_p > max_p:
             return
 
         min_range = max(10 * tick_size, self.MIN_PRICE_RANGE)
-        target_range = max(min_range, (max_p - min_p) * 1.35)  # 35% margin
+        target_range = max(min_range, (max_p - min_p) * 1.35)
         target_center = (min_p + max_p) / 2.0
 
         if target_range > self.price_range:
-            # Immediate expansion
             self.price_range = target_range
             self.center_price = target_center
         else:
-            # Smooth hysteresis shrink
             self.price_range = lerp(self.price_range, target_range, 0.06)
             self.center_price = lerp(self.center_price, target_center, 0.08)
 
     def reset_to_recent(self, latest_time_ms: float = None, current_price: float = None):
-        """Resets camera view to 5 minutes, enables live follow and auto-fit."""
         self.time_span_ms = 300_000.0  # 5 minutes
         if latest_time_ms and latest_time_ms > 0:
             self.center_time_ms = latest_time_ms - (0.35 * self.time_span_ms)
