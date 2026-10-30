@@ -242,25 +242,19 @@ class BubbleCanvas(QWidget):
         w = self.width()
         h = self.height()
 
-        # Visual Spacing: calculate available pixel height per price bin
         px_per_price_unit = h / max(0.01, self.camera.price_range)
-        price_row_height_px = self.tick_size * px_per_price_unit
+        price_row_height_px = max(self.tick_size, price_bin) * px_per_price_unit
         max_cell_radius = max(3.0, (price_row_height_px / 2.0) - self.spacing_padding)
 
-        # -------------------------------------------------------------
-        # A. MICRO LAYER (Synthetic L2 DOM Ladder)
-        # -------------------------------------------------------------
-        if macro_weight < 0.98 and len(visible_ticks) > 0:
-            micro_alpha = 1.0 - macro_weight
-
-            # Build L2 DOM Ladder cells (Mathematical truth)
-            cells = self.dom_ladder.build_dom_ladder(
+        # -----------------------------------------------------------------
+        # SCENARIO 1: USER PICKED A FIXED ACCUMULATION INTERVAL (1ms .. 4h)
+        # All ticks in each interval fuse into exactly 1 bubble per interval!
+        # -----------------------------------------------------------------
+        if self.active_interval != "AUTO" and manual_int_ms is not None and len(visible_ticks) > 0:
+            cells = self.dom_ladder.build_interval_series(
                 visible_ticks,
-                interval_ms=bucket_ms,
-                tick_size=self.tick_size,
-                style='dom_ladder'
+                interval_ms=manual_int_ms
             )
-
             if cells:
                 vols = np.array([c['volume'] for c in cells])
                 p95_v = robust_p95(vols)
@@ -268,7 +262,6 @@ class BubbleCanvas(QWidget):
 
                 for c in cells:
                     vol = c['volume']
-                    # Apply min volume filter
                     if self.min_volume_filter > 0 and vol < self.min_volume_filter:
                         continue
 
@@ -276,19 +269,23 @@ class BubbleCanvas(QWidget):
                     sx = self.camera.time_to_screen_x(c['x'])
                     sy = self.camera.price_to_screen_y(c['y'])
 
-                    if sx < -50 or sx > w + 50 or sy < -50 or sy > h + 50:
+                    if sx < -60 or sx > w + 60 or sy < -60 or sy > h + 60:
                         continue
 
-                    # Engine Visual: compute radius with baseline volume 1.0 and cell spacing
                     radius = self.renderer.compute_radius(
-                        vol, p95_v, is_macro=False,
+                        vol, p95_v, is_macro=(manual_int_ms >= 60_000),
                         size_scale=self.size_scale,
                         max_cell_radius=max_cell_radius
                     )
                     has_glow = (vol >= p98_v)
 
-                    # Determine delta color
-                    color_type, _, _ = ModeClassifier.classify_delta(c['buy_vol'], c['sell_vol'], vol)
+                    # Strict color assignment based on active mode!
+                    if self.active_mode == "TOTAL_VOLUME":
+                        color_type = "classic" # 100% Pure Cyan!
+                    elif self.active_mode == "NET_DELTA":
+                        color_type, _, _ = ModeClassifier.classify_delta(c['buy_vol'], c['sell_vol'], vol)
+                    else: # SPLIT_PIE
+                        color_type = "classic"
 
                     bubbles.append({
                         'sx': sx,
@@ -296,90 +293,156 @@ class BubbleCanvas(QWidget):
                         'radius': radius,
                         'color_type': color_type,
                         'has_glow': has_glow,
-                        'alpha': micro_alpha,
+                        'alpha': 1.0,
                         'volume': vol,
                         'buy_vol': c['buy_vol'],
                         'sell_vol': c['sell_vol'],
                         'price': c['y'],
                         'ts': c['x'],
                         'ticks': c['tick_count'],
-                        'interval_ms': c.get('interval_ms', bucket_ms),
+                        'interval_ms': manual_int_ms,
                         'imb_type': 'none',
                         'has_stack': False
                     })
 
-        # -------------------------------------------------------------
-        # B. MACRO LAYER
-        # -------------------------------------------------------------
-        if macro_weight > 0.02:
-            macro_alpha = macro_weight
-            macro_bubbles = []
+        # -----------------------------------------------------------------
+        # SCENARIO 2: AUTO LOD (Micro Price Ladder < 5m, Macro VWAP > 5m)
+        # -----------------------------------------------------------------
+        elif self.active_interval == "AUTO":
+            # Micro Layer
+            if macro_weight < 0.98 and len(visible_ticks) > 0:
+                micro_alpha = 1.0 - macro_weight
+                cells = self.dom_ladder.build_dom_ladder(
+                    visible_ticks,
+                    interval_ms=bucket_ms,
+                    price_bin=price_bin,
+                    style='dom_ladder'
+                )
+                if cells:
+                    vols = np.array([c['volume'] for c in cells])
+                    p95_v = robust_p95(vols)
+                    p98_v = float(np.percentile(vols, 98)) if len(vols) >= 5 else (p95_v * 1.5)
 
-            if self.bar_store:
-                if self.camera.time_span_ms <= 3600_000.0 * 6:
-                    bars = self.bar_store.get_bars_1s(int(min_t), int(max_t))
-                else:
-                    bars = self.bar_store.get_bars_1m(int(min_t), int(max_t))
+                    for c in cells:
+                        vol = c['volume']
+                        if self.min_volume_filter > 0 and vol < self.min_volume_filter:
+                            continue
 
-                if len(bars) > 0:
-                    macro_bubbles = self.macro_series.build_from_bars(bars, bucket_ms)
+                        collected_prices.append(c['y'])
+                        sx = self.camera.time_to_screen_x(c['x'])
+                        sy = self.camera.price_to_screen_y(c['y'])
 
-            if len(macro_bubbles) == 0 and self.db_manager and self.camera.time_span_ms > 3600_000.0:
-                db_bars = self.db_manager.get_bars_1m(self.symbol, int(min_t), int(max_t))
-                if db_bars:
-                    bar_dtype = self.bar_store.dtype if self.bar_store else np.dtype([
-                        ('ts', np.int64), ('open', np.float64), ('high', np.float64),
-                        ('low', np.float64), ('close', np.float64), ('volume', np.float64),
-                        ('buy_vol', np.float64), ('sell_vol', np.float64),
-                        ('vwap', np.float64), ('ticks', np.int32)
-                    ])
-                    np_bars = np.array(db_bars, dtype=bar_dtype)
-                    macro_bubbles = self.macro_series.build_from_bars(np_bars, bucket_ms)
+                        if sx < -50 or sx > w + 50 or sy < -50 or sy > h + 50:
+                            continue
 
-            if len(macro_bubbles) == 0 and len(visible_ticks) > 0:
-                macro_bubbles = self.macro_series.build_from_ticks(visible_ticks, bucket_ms)
+                        radius = self.renderer.compute_radius(
+                            vol, p95_v, is_macro=False,
+                            size_scale=self.size_scale,
+                            max_cell_radius=max_cell_radius
+                        )
+                        has_glow = (vol >= p98_v)
 
-            if macro_bubbles:
-                m_vols = np.array([mb['volume'] for mb in macro_bubbles])
-                m_p95 = robust_p95(m_vols)
-                m_p98 = float(np.percentile(m_vols, 98)) if len(m_vols) >= 5 else (m_p95 * 1.5)
+                        if self.active_mode == "TOTAL_VOLUME":
+                            color_type = "classic"
+                        elif self.active_mode == "NET_DELTA":
+                            color_type, _, _ = ModeClassifier.classify_delta(c['buy_vol'], c['sell_vol'], vol)
+                        else:
+                            color_type = "classic"
 
-                for mb in macro_bubbles:
-                    vol = mb['volume']
-                    if self.min_volume_filter > 0 and vol < self.min_volume_filter:
-                        continue
+                        bubbles.append({
+                            'sx': sx,
+                            'sy': sy,
+                            'radius': radius,
+                            'color_type': color_type,
+                            'has_glow': has_glow,
+                            'alpha': micro_alpha,
+                            'volume': vol,
+                            'buy_vol': c['buy_vol'],
+                            'sell_vol': c['sell_vol'],
+                            'price': c['y'],
+                            'ts': c['x'],
+                            'ticks': c['tick_count'],
+                            'interval_ms': c.get('interval_ms', bucket_ms),
+                            'imb_type': 'none',
+                            'has_stack': False
+                        })
 
-                    collected_prices.append(mb['y'])
-                    sx = self.camera.time_to_screen_x(mb['x'])
-                    sy = self.camera.price_to_screen_y(mb['y'])
+            # Macro Layer
+            if macro_weight > 0.02:
+                macro_alpha = macro_weight
+                macro_bubbles = []
 
-                    if sx < -60 or sx > w + 60 or sy < -60 or sy > h + 60:
-                        continue
+                if self.bar_store:
+                    if self.camera.time_span_ms <= 3600_000.0 * 6:
+                        bars = self.bar_store.get_bars_1s(int(min_t), int(max_t))
+                    else:
+                        bars = self.bar_store.get_bars_1m(int(min_t), int(max_t))
 
-                    radius = self.renderer.compute_radius(
-                        vol, m_p95, is_macro=True,
-                        size_scale=self.size_scale
-                    )
-                    has_glow = (vol >= m_p98)
-                    color_type, _, _ = ModeClassifier.classify_delta(mb['buy_vol'], mb['sell_vol'], vol)
+                    if len(bars) > 0:
+                        macro_bubbles = self.macro_series.build_from_bars(bars, bucket_ms)
 
-                    bubbles.append({
-                        'sx': sx,
-                        'sy': sy,
-                        'radius': radius,
-                        'color_type': color_type,
-                        'has_glow': has_glow,
-                        'alpha': macro_alpha,
-                        'volume': vol,
-                        'buy_vol': mb['buy_vol'],
-                        'sell_vol': mb['sell_vol'],
-                        'price': mb['y'],
-                        'ts': mb['x'],
-                        'ticks': mb['ticks'],
-                        'interval_ms': bucket_ms,
-                        'imb_type': color_type,
-                        'has_stack': False
-                    })
+                if len(macro_bubbles) == 0 and self.db_manager and self.camera.time_span_ms > 3600_000.0:
+                    db_bars = self.db_manager.get_bars_1m(self.symbol, int(min_t), int(max_t))
+                    if db_bars:
+                        bar_dtype = self.bar_store.dtype if self.bar_store else np.dtype([
+                            ('ts', np.int64), ('open', np.float64), ('high', np.float64),
+                            ('low', np.float64), ('close', np.float64), ('volume', np.float64),
+                            ('buy_vol', np.float64), ('sell_vol', np.float64),
+                            ('vwap', np.float64), ('ticks', np.int32)
+                        ])
+                        np_bars = np.array(db_bars, dtype=bar_dtype)
+                        macro_bubbles = self.macro_series.build_from_bars(np_bars, bucket_ms)
+
+                if len(macro_bubbles) == 0 and len(visible_ticks) > 0:
+                    macro_bubbles = self.macro_series.build_from_ticks(visible_ticks, bucket_ms)
+
+                if macro_bubbles:
+                    m_vols = np.array([mb['volume'] for mb in macro_bubbles])
+                    m_p95 = robust_p95(m_vols)
+                    m_p98 = float(np.percentile(m_vols, 98)) if len(m_vols) >= 5 else (m_p95 * 1.5)
+
+                    for mb in macro_bubbles:
+                        vol = mb['volume']
+                        if self.min_volume_filter > 0 and vol < self.min_volume_filter:
+                            continue
+
+                        collected_prices.append(mb['y'])
+                        sx = self.camera.time_to_screen_x(mb['x'])
+                        sy = self.camera.price_to_screen_y(mb['y'])
+
+                        if sx < -60 or sx > w + 60 or sy < -60 or sy > h + 60:
+                            continue
+
+                        radius = self.renderer.compute_radius(
+                            vol, m_p95, is_macro=True,
+                            size_scale=self.size_scale
+                        )
+                        has_glow = (vol >= m_p98)
+
+                        if self.active_mode == "TOTAL_VOLUME":
+                            color_type = "classic"
+                        elif self.active_mode == "NET_DELTA":
+                            color_type, _, _ = ModeClassifier.classify_delta(mb['buy_vol'], mb['sell_vol'], vol)
+                        else:
+                            color_type = "classic"
+
+                        bubbles.append({
+                            'sx': sx,
+                            'sy': sy,
+                            'radius': radius,
+                            'color_type': color_type,
+                            'has_glow': has_glow,
+                            'alpha': macro_alpha,
+                            'volume': vol,
+                            'buy_vol': mb['buy_vol'],
+                            'sell_vol': mb['sell_vol'],
+                            'price': mb['y'],
+                            'ts': mb['x'],
+                            'ticks': mb['ticks'],
+                            'interval_ms': bucket_ms,
+                            'imb_type': 'none',
+                            'has_stack': False
+                        })
 
         if self.camera.auto_fit_price and collected_prices:
             min_p = min(collected_prices)
@@ -390,7 +453,6 @@ class BubbleCanvas(QWidget):
             bubbles.sort(key=lambda b: b['volume'], reverse=True)
             bubbles = bubbles[:3000]
 
-        # Sort so larger bubbles are drawn in back, smaller on top
         bubbles.sort(key=lambda b: b['radius'], reverse=True)
         self.visible_bubbles = bubbles
 
@@ -433,7 +495,6 @@ class BubbleCanvas(QWidget):
         w = self.width()
         h = self.height()
 
-        # Canvas Background with radial vignette
         grad = QRadialGradient(w / 2.0, h / 2.0, max(w, h) * 0.7)
         grad.setColorAt(0.0, QColor("#0A0E15"))
         grad.setColorAt(0.8, QColor("#06080C"))
@@ -442,7 +503,6 @@ class BubbleCanvas(QWidget):
         painter.setPen(Qt.NoPen)
         painter.drawRect(0, 0, w, h)
 
-        # Draw Bubbles according to active mode (SPLIT_PIE / NET_DELTA / TOTAL_VOLUME)
         for b in self.visible_bubbles:
             self.renderer.draw_bubble(
                 painter,
@@ -493,7 +553,6 @@ class BubbleCanvas(QWidget):
             self.last_mouse_pos = event.pos()
             event.accept()
         elif event.button() == Qt.RightButton:
-            # Right-click drag starts Price & Time Stretch
             self.is_right_dragging = True
             self.last_mouse_pos = event.pos()
             event.accept()
@@ -504,10 +563,8 @@ class BubbleCanvas(QWidget):
         self.last_mouse_pos = event.pos()
 
         if self.is_left_dragging:
-            # Left-click drag: Pan
             self.camera.pan(delta.x(), delta.y())
         elif self.is_right_dragging:
-            # Right-click drag: Price stretch (dy) and Time stretch (dx)
             self.camera.stretch(delta.x(), delta.y())
 
         event.accept()
