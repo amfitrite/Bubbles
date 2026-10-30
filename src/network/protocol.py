@@ -5,13 +5,23 @@ logger = logging.getLogger(__name__)
 class ProtocolParser:
     """
     High-performance parser for MT5 TCP Bridge protocol stream.
-    Messages are newline-delimited ASCII strings:
-      - TICK|symbol|ts_ms|bid|ask|last|volume|flags
-      - META|symbol|digits|point|tick_size|contract_size
-      - BAR|symbol|timeframe|ts_ms|open|high|low|close|vol|buy_vol|sell_vol|vwap|ticks
+    Supports BOTH:
+      1. MT5 EA native format:
+         - #SYMBOL:XAUUSD
+         - #META:XAUUSD,digits,point,tick_size,contract_size
+         - #HIST_START:count / #HIST_END
+         - timestamp_ms,bid,ask,last,volume,flags (comma-separated)
+         - timestamp_ms,bid,ask,volume,flags (legacy 5-field)
+      2. ASCII Pipe-delimited format (for tools & simulator):
+         - TICK|symbol|ts|bid|ask|last|volume|flags
+         - META|symbol|digits|point|tick_size|contract_size
+         - SYMBOL|symbol
     """
     def __init__(self):
         self.buffer = ""
+        self.symbol = "XAUUSD"
+        self.meta = {}
+        self.in_history = False
 
     def feed(self, chunk: str):
         """
@@ -26,7 +36,7 @@ class ProtocolParser:
 
         parsed_events = []
         for line in completed_lines:
-            line = line.strip()
+            line = line.strip().replace("\r", "")
             if not line:
                 continue
             event = self.parse_line(line)
@@ -36,25 +46,147 @@ class ProtocolParser:
         return parsed_events
 
     def parse_line(self, line: str):
+        line = line.strip().replace("\r", "")
+        if not line:
+            return None
+
         try:
-            parts = line.split("|")
-            msg_type = parts[0]
+            # --- Format A: MT5 Command Lines Starting With '#' ---
+            if line.startswith("#"):
+                if line.startswith("#SYMBOL:"):
+                    sym = line.split(":", 1)[1].strip()
+                    if sym:
+                        self.symbol = sym
+                    return ("SYMBOL", self.symbol, {'symbol': self.symbol})
 
-            if msg_type == "TICK":
-                # TICK|symbol|ts|bid|ask|last|volume|flags
-                if len(parts) < 8:
+                elif line.startswith("#META:"):
+                    # #META:XAUUSD,2,0.01,0.01,100.00
+                    content = line.split(":", 1)[1].strip()
+                    parts = content.split(",")
+                    if len(parts) >= 5:
+                        sym = parts[0].strip()
+                        if sym:
+                            self.symbol = sym
+                        digits = int(parts[1])
+                        point = float(parts[2])
+                        tick_size = float(parts[3])
+                        contract_size = float(parts[4])
+                        if tick_size <= 0:
+                            tick_size = point
+
+                        self.meta = {
+                            'symbol': self.symbol,
+                            'digits': digits,
+                            'point': point,
+                            'tick_size': tick_size,
+                            'contract_size': contract_size
+                        }
+                        return ("META", self.symbol, self.meta)
                     return None
-                symbol = parts[1]
-                ts = int(parts[2])
-                bid = float(parts[3])
-                ask = float(parts[4])
-                last = float(parts[5])
-                volume = float(parts[6])
-                flags = int(parts[7])
-                # Side determination from MT5 flags: 32 = Buy, 64 = Sell
-                side = 1 if (flags & 32) != 0 else (-1 if (flags & 64) != 0 else 0)
 
-                return ("TICK", symbol, {
+                elif line.startswith("#HIST_START:"):
+                    self.in_history = True
+                    try:
+                        count = int(line.split(":", 1)[1].strip())
+                    except ValueError:
+                        count = 0
+                    return ("HIST_START", self.symbol, {'count': count})
+
+                elif line.startswith("#HIST_END"):
+                    self.in_history = False
+                    return ("HIST_END", self.symbol, {})
+
+                return None
+
+            # --- Format B: Pipe-Delimited Messages (TICK|..., META|..., SYMBOL|...) ---
+            if "|" in line:
+                parts = line.split("|")
+                msg_type = parts[0]
+
+                if msg_type == "TICK":
+                    if len(parts) < 8:
+                        return None
+                    sym = parts[1].strip()
+                    if sym:
+                        self.symbol = sym
+                    ts = int(parts[2])
+                    bid = float(parts[3])
+                    ask = float(parts[4])
+                    last = float(parts[5])
+                    volume = float(parts[6])
+                    flags = int(parts[7])
+                    side = 1 if (flags & 32) != 0 else (-1 if (flags & 64) != 0 else 0)
+                    if last <= 0.0:
+                        last = ask if side == 1 else bid
+
+                    return ("TICK", self.symbol, {
+                        'ts': ts,
+                        'bid': bid,
+                        'ask': ask,
+                        'last': last,
+                        'volume': volume,
+                        'flags': flags,
+                        'side': side
+                    })
+
+                elif msg_type == "META":
+                    if len(parts) < 6:
+                        return None
+                    sym = parts[1].strip()
+                    if sym:
+                        self.symbol = sym
+                    digits = int(parts[2])
+                    point = float(parts[3])
+                    tick_size = float(parts[4])
+                    contract_size = float(parts[5])
+                    if tick_size <= 0:
+                        tick_size = point
+
+                    self.meta = {
+                        'symbol': self.symbol,
+                        'digits': digits,
+                        'point': point,
+                        'tick_size': tick_size,
+                        'contract_size': contract_size
+                    }
+                    return ("META", self.symbol, self.meta)
+
+                elif msg_type == "SYMBOL":
+                    if len(parts) >= 2:
+                        sym = parts[1].strip()
+                        if sym:
+                            self.symbol = sym
+                        return ("SYMBOL", self.symbol, {'symbol': self.symbol})
+
+                return None
+
+            # --- Format C: MT5 Comma-Separated Tick Lines ---
+            if "," in line:
+                parts = line.split(",")
+                if len(parts) >= 6:
+                    # 6-field: timestamp_ms,bid,ask,last,volume,flags
+                    ts = int(parts[0])
+                    bid = float(parts[1])
+                    ask = float(parts[2])
+                    last = float(parts[3])
+                    volume = float(parts[4])
+                    flags = int(parts[5])
+                elif len(parts) == 5:
+                    # 5-field: timestamp_ms,bid,ask,volume,flags
+                    ts = int(parts[0])
+                    bid = float(parts[1])
+                    ask = float(parts[2])
+                    last = 0.0
+                    volume = float(parts[3])
+                    flags = int(parts[4])
+                else:
+                    return None
+
+                side = 1 if (flags & 32) != 0 else (-1 if (flags & 64) != 0 else 0)
+                if last <= 0.0:
+                    last = ask if side == 1 else bid
+
+                return ("TICK", self.symbol, {
                     'ts': ts,
                     'bid': bid,
                     'ask': ask,
@@ -64,46 +196,8 @@ class ProtocolParser:
                     'side': side
                 })
 
-            elif msg_type == "META":
-                # META|symbol|digits|point|tick_size|contract_size
-                if len(parts) < 6:
-                    return None
-                symbol = parts[1]
-                return ("META", symbol, {
-                    'symbol': symbol,
-                    'digits': int(parts[2]),
-                    'point': float(parts[3]),
-                    'tick_size': float(parts[4]),
-                    'contract_size': float(parts[5])
-                })
-
-            elif msg_type == "SYMBOL":
-                # SYMBOL|symbol
-                if len(parts) < 2:
-                    return None
-                return ("SYMBOL", parts[1], {'symbol': parts[1]})
-
-            elif msg_type == "BAR":
-                # BAR|symbol|tf|ts|open|high|low|close|vol|buy_vol|sell_vol|vwap|ticks
-                if len(parts) < 13:
-                    return None
-                symbol = parts[1]
-                return ("BAR", symbol, {
-                    'timeframe': parts[2],
-                    'ts': int(parts[3]),
-                    'open': float(parts[4]),
-                    'high': float(parts[5]),
-                    'low': float(parts[6]),
-                    'close': float(parts[7]),
-                    'volume': float(parts[8]),
-                    'buy_vol': float(parts[9]),
-                    'sell_vol': float(parts[10]),
-                    'vwap': float(parts[11]),
-                    'ticks': int(parts[12])
-                })
-
         except Exception as e:
-            logger.debug(f"Protocol parse error for line '{line}': {e}")
+            logger.debug(f"Protocol parse error on line '{line}': {e}")
             return None
 
         return None

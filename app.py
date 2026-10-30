@@ -63,6 +63,9 @@ class BubblesApp:
                 side=side
             )
 
+            if symbol and hasattr(self, 'window') and self.window.canvas.symbol != symbol:
+                self.window.on_symbol_meta(symbol)
+
         elif msg_type == 'META':
             logger.info(f"Received META for {symbol}: {data}")
             self.window.on_symbol_meta(symbol, data.get('tick_size', 0.01))
