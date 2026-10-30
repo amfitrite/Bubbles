@@ -30,7 +30,7 @@ class GLCanvas(BaseCanvas):
     Combines Bookmap Microstructure (Trajectorized Bubbles, 4 Modes, Pixel Gap)
     with TradingView Macrostructure (Right DOM Volume Profile, Session High/Low/VWAP/POC, Time Axis).
     """
-    telemetry_updated = Signal(str, float, bool, float, float, str)
+    telemetry_updated = Signal(str, float, bool, float, float, str, str)
     dock_updated = Signal(str, float, float, bool, bool)
 
     def __init__(self, tick_store: TickStore, parent=None):
@@ -75,14 +75,35 @@ class GLCanvas(BaseCanvas):
         # Tooltip
         self.tooltip = MonospaceTooltip(self)
 
-        # High-Speed 2ms Precise Render Timer
+        # Configurable Render Timer (Default: 60 FPS capped)
+        self.fps_target = "60"
         self.render_timer = QTimer(self)
         self.render_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.render_timer.timeout.connect(self.tick_frame)
-        self.render_timer.start(2)
+        self.set_fps_target("60")
 
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
+
+    def set_fps_target(self, target: str):
+        """
+        Sets target FPS cap:
+          '60': ~60 FPS (16ms interval) [Default]
+          '120': ~120 FPS (8ms interval)
+          'UNLIMITED': Uncapped (0ms interval, maximum hardware speed)
+        """
+        if target not in ("60", "120", "UNLIMITED"):
+            target = "60"
+        self.fps_target = target
+        if target == "60":
+            self.render_timer.setInterval(16)
+        elif target == "120":
+            self.render_timer.setInterval(8)
+        else:
+            self.render_timer.setInterval(0)
+        if not self.render_timer.isActive():
+            self.render_timer.start()
+        self.update()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -177,7 +198,7 @@ class GLCanvas(BaseCanvas):
             self._last_telemetry_emit = now_sec
             self.telemetry_updated.emit(
                 self.symbol, self.last_price, self.is_connected,
-                self.last_tick_time, self.fps, self.active_mode
+                self.last_tick_time, self.fps, self.active_mode, self.fps_target
             )
             self.dock_updated.emit(
                 self.active_interval, self.layout_engine.min_gap_px,
