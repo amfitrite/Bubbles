@@ -82,11 +82,17 @@ class TestVisualEngine(unittest.TestCase):
         self.assertIsNotNone(canvas.current_layout)
 
     def test_auto_center_functionality(self):
-        # 1. Camera auto_center tracking
+        # 1. Camera auto_center tracking with deadband
         self.camera.auto_center = True
         self.camera.center_price = 4000.0
+        self.camera.price_range = 10.0 # deadband = 1.50
+
+        # Inside deadband (4000.50): center_price MUST NOT move at all
+        self.camera.update_auto_center(4000.50)
+        self.assertEqual(self.camera.center_price, 4000.0)
+
+        # Outside deadband (4005.0): should lerp towards 4005.0
         self.camera.update_auto_center(4005.0)
-        # Should lerp towards 4005.0
         self.assertGreater(self.camera.center_price, 4000.0)
         self.assertLessEqual(self.camera.center_price, 4005.0)
 

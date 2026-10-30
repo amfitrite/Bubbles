@@ -134,8 +134,12 @@ class Camera:
             return
         if self.center_price <= 0.0 or abs(self.center_price - current_price) > 500.0:
             self.center_price = current_price
-        else:
-            self.center_price = lerp(self.center_price, current_price, 0.20)
+            return
+
+        # Central Deadband: Keep vertical viewport 100% locked if price stays within middle 30% of screen
+        deadband = self.price_range * 0.15
+        if abs(current_price - self.center_price) > deadband:
+            self.center_price = lerp(self.center_price, current_price, 0.10)
 
     def update_auto_fit(self, min_p: float, max_p: float, tick_size: float = 0.01):
         if not self.auto_fit_price or min_p is None or max_p is None or min_p > max_p:

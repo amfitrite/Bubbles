@@ -107,5 +107,29 @@ class TestAlgoEngine(unittest.TestCase):
         self.assertEqual(self.engine.vp_engine.total_volume, 0.0)
         self.assertEqual(len(self.engine.vp_engine.profile), 0)
 
+    def test_trajectory_epoch_anchor_immutability(self):
+        # Generate 2000 ticks (> 1500 to trigger decimation)
+        N = 2000
+        ts = np.arange(1000000, 1000000 + N * 10, 10) # 10ms step
+        prices = 4000.0 + np.sin(np.arange(N) * 0.1).round(2)
+        ticks = np.zeros(N, dtype=TICK_DTYPE)
+        ticks['ts'] = ts
+        ticks['last'] = prices
+        ticks['volume'] = 1.0
+
+        # Window 1: ticks[0 : 1800]
+        snap1 = self.engine.compute_snapshot(ticks[0:1800], interval_ms=1000, version=1)
+        # Window 2: shifted by 1 tick [1 : 1801] (simulating 1 new tick arriving and window advancing)
+        snap2 = self.engine.compute_snapshot(ticks[1:1801], interval_ms=1000, version=2)
+
+        # Historical vertices that exist in both snapshots MUST have identical timestamps and prices
+        common_ts1 = {pt[0]: pt[1] for pt in snap1.trajectory_points[:-1]}
+        common_ts2 = {pt[0]: pt[1] for pt in snap2.trajectory_points[:-1]}
+
+        overlap_keys = set(common_ts1.keys()) & set(common_ts2.keys())
+        self.assertGreater(len(overlap_keys), 50) # strong sample size
+        for k in overlap_keys:
+            self.assertEqual(common_ts1[k], common_ts2[k], f"Vertex at ts {k} changed across frames!")
+
 if __name__ == "__main__":
     unittest.main()

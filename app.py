@@ -2,6 +2,7 @@ import sys
 import os
 import logging
 import time
+import math
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
@@ -46,17 +47,33 @@ class BubblesApp:
         Directly appends to TickStore without blocking the network thread.
         """
         if msg_type == 'TICK':
-            price = data['last'] if data['last'] > 0 else data['bid']
-            vol = data['volume']
-            ts = data['ts']
-            flags = data['flags']
-            side = data.get('side', 0)
+            bid = float(data.get('bid', 0.0))
+            ask = float(data.get('ask', 0.0))
+            last = float(data.get('last', 0.0))
+
+            price = last if last > 0 else (bid if bid > 0 else ask)
+            if price <= 0.0 or math.isnan(price) or math.isinf(price):
+                return
+
+            # Spike protection: reject extreme anomalous price spikes (>25% jump in 1 tick)
+            if self.tick_store.count > 0:
+                last_known = float(self.tick_store.data[(self.tick_store.head - 1) % self.tick_store.max_ticks]['last'])
+                if last_known > 0 and abs(price - last_known) > max(last_known * 0.25, 200.0):
+                    logger.warning(f"Rejected corrupt tick spike: {price} vs last {last_known}")
+                    return
+
+            vol = float(data.get('volume', 0.0))
+            if vol <= 0:
+                vol = 1.0
+            ts = int(data.get('ts', 0))
+            flags = int(data.get('flags', 0))
+            side = int(data.get('side', 0))
 
             # Ingest into Algo TickStore
             added = self.tick_store.add_tick(
                 ts=ts,
-                bid=data['bid'],
-                ask=data['ask'],
+                bid=bid if bid > 0 else price,
+                ask=ask if ask > 0 else price,
                 last=price,
                 volume=vol,
                 flags=flags,

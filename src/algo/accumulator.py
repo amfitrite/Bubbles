@@ -70,30 +70,37 @@ class OrderFlowAlgoEngine:
                 version=version
             )
 
-        prices = np.where(visible_ticks['last'] > 0, visible_ticks['last'], visible_ticks['bid'])
+        raw_prices = np.where(visible_ticks['last'] > 0, visible_ticks['last'], visible_ticks['bid'])
+        valid_p = raw_prices[raw_prices > 0]
+        fallback_p = float(valid_p[-1]) if len(valid_p) > 0 else (self.vp_engine.get_macro_structure().session_vwap if self.vp_engine.total_volume > 0 else 4000.0)
+        prices = np.where(raw_prices > 0, raw_prices, fallback_p)
         last_price = float(prices[-1])
         last_ts = int(visible_ticks['ts'][-1])
 
         # 1. Build Interval Series (1 bubble per time bucket)
         bubbles = self._build_bubbles(visible_ticks, prices, interval_ms)
 
-        # 2. Extract Trajectory Points in visible window (Rock-solid immutable historical vertices)
+        # 2. Extract Trajectory Points in visible window (Epoch-anchored immutable historical vertices)
         n_ticks = len(visible_ticks)
-        if n_ticks <= 1200:
-            step = 1
-        elif n_ticks <= 2400:
-            step = 2
-        elif n_ticks <= 4800:
-            step = 4
-        else:
-            step = 8
-
-        if step == 1:
+        if n_ticks <= 1500:
             trajectory = [(int(visible_ticks['ts'][i]), float(prices[i])) for i in range(n_ticks)]
         else:
-            # Fixed index alignment prevents jitter across frames
-            indices = np.arange(0, n_ticks, step)
-            trajectory = [(int(visible_ticks['ts'][idx]), float(prices[idx])) for idx in indices]
+            # Epoch-anchored time decimation: historical vertices remain 100% immutable across sliding frames
+            ts_start = int(visible_ticks['ts'][0])
+            ts_end = int(visible_ticks['ts'][-1])
+            time_span = max(1.0, float(ts_end - ts_start))
+            target_step = time_span / 1200.0
+            nice_steps = [10, 20, 50, 100, 250, 500, 1000, 2000, 5000, 10000, 30000, 60000]
+            step_ms = nice_steps[-1]
+            for ns in nice_steps:
+                if ns >= target_step:
+                    step_ms = ns
+                    break
+
+            t_buckets = visible_ticks['ts'] // step_ms
+            diffs = np.flatnonzero(np.diff(t_buckets))
+            sampled_indices = np.r_[diffs, n_ticks - 1]
+            trajectory = [(int(visible_ticks['ts'][idx]), float(prices[idx])) for idx in sampled_indices]
 
         # Ensure latest live tick is always the exact live tip
         if not trajectory or trajectory[-1][0] != last_ts:

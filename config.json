@@ -1,19 +1,19 @@
 {
   "fps_limit": "60",
-  "active_mode": "TOTAL_VOLUME",
-  "active_interval": "AUTO",
+  "active_mode": "SPLIT_PIE",
+  "active_interval": "1m",
   "min_gap_px": 6.0,
   "size_scale": 1.0,
   "imbalance_ratio": 3.0,
   "min_volume_filter": 0.0,
-  "auto_fit_price": true,
+  "auto_fit_price": false,
   "follow_live": true,
-  "auto_center": true,
+  "auto_center": false,
   "window": {
     "width": 1366,
     "height": 768,
-    "x": -1,
-    "y": -1,
+    "x": 160,
+    "y": 211,
     "is_maximized": false
   }
 }
