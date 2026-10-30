@@ -1,12 +1,16 @@
-from src.algo.models import TICK_DTYPE, AlgoBubble
+from src.algo.models import TICK_DTYPE, AlgoBubble, MacroStructure, OrderFlowSnapshot
 from src.algo.tick_store import TickStore
-from src.algo.accumulator import IntervalAccumulator, INTERVAL_MAP, INTERVAL_OPTIONS
+from src.algo.volume_profile import VolumeProfileEngine
+from src.algo.accumulator import OrderFlowAlgoEngine, INTERVAL_MAP, INTERVAL_OPTIONS
 
 __all__ = [
     "TICK_DTYPE",
     "AlgoBubble",
+    "MacroStructure",
+    "OrderFlowSnapshot",
     "TickStore",
-    "IntervalAccumulator",
+    "VolumeProfileEngine",
+    "OrderFlowAlgoEngine",
     "INTERVAL_MAP",
     "INTERVAL_OPTIONS"
 ]

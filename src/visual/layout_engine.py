@@ -1,8 +1,9 @@
 import math
 import numpy as np
-from typing import List, Dict
+from typing import List, Tuple
 from dataclasses import dataclass
-from src.algo.models import AlgoBubble
+from PySide6.QtCore import QPointF
+from src.algo.models import AlgoBubble, OrderFlowSnapshot
 from src.visual.camera import Camera
 
 @dataclass
@@ -19,13 +20,22 @@ class VisualBubble:
     raw_sy: float       # Unaltered camera projected screen Y
     algo: AlgoBubble    # Pure uncorrupted mathematical truth
 
+@dataclass
+class LayoutResult:
+    """
+    Complete layout payload passed to QOpenGLWidget render pass.
+    """
+    bubbles: List[VisualBubble]
+    trajectory_screen_points: List[QPointF]
+    snapshot: OrderFlowSnapshot
+
 class VisualLayoutEngine:
     """
     Decoupled Visual Layout & Spacing Engine.
     Guarantees visual breathing room (anti-clumping) between bubbles without modifying
     or distorting any underlying algorithmic price/volume/delta calculations.
     """
-    def __init__(self, min_gap_px: float = 5.0, size_scale: float = 1.0):
+    def __init__(self, min_gap_px: float = 6.0, size_scale: float = 1.0):
         self.min_gap_px = min_gap_px
         self.size_scale = size_scale
         self.min_radius = 3.0
@@ -43,34 +53,33 @@ class VisualLayoutEngine:
         rad = r_min + (r_max - r_min) * math.sqrt(norm)
         return max(r_min, min(r_max, rad))
 
-    def process_layout(self, algo_bubbles: List[AlgoBubble], camera: Camera,
+    def process_layout(self, bubbles: List[AlgoBubble], camera: Camera,
                        min_volume_filter: float = 0.0) -> List[VisualBubble]:
         """
-        Transforms AlgoBubbles into visually comfortable, non-overlapping VisualBubbles.
+        Processes a list of AlgoBubble objects into VisualBubble presentation nodes,
+        enforcing minimum physical pixel gaps between adjacent bubbles.
         """
-        if not algo_bubbles:
+        if not bubbles:
             return []
 
+        chart_w = camera.chart_width
+        chart_h = camera.chart_height
+
         # Filter min volume if requested
-        valid_bubbles = [b for b in algo_bubbles if b.volume >= min_volume_filter] if min_volume_filter > 0 else algo_bubbles
+        valid_bubbles = [b for b in bubbles if b.volume >= min_volume_filter] if min_volume_filter > 0 else bubbles
         if not valid_bubbles:
             return []
 
-        # Calculate robust P95 volume for proportional bubble sizing
         vols = np.array([b.volume for b in valid_bubbles])
         p95_v = float(np.percentile(vols, 95)) if len(vols) >= 5 else float(np.max(vols))
 
-        w = camera.width
-        h = camera.height
         visual_nodes: List[VisualBubble] = []
-
-        # 1. Project raw screen coordinates and assign radius
         for b in valid_bubbles:
             raw_sx = camera.time_to_screen_x(b.ts)
             raw_sy = camera.price_to_screen_y(b.price)
 
-            # Cull bubbles far outside viewport boundaries
-            if raw_sx < -80 or raw_sx > w + 80 or raw_sy < -80 or raw_sy > h + 80:
+            # Viewport culling (with margin)
+            if raw_sx < -60 or raw_sx > chart_w + 60 or raw_sy < -60 or raw_sy > chart_h + 60:
                 continue
 
             radius = self.compute_radius(b.volume, p95_v)
@@ -86,30 +95,41 @@ class VisualLayoutEngine:
         if not visual_nodes:
             return []
 
-        # 2. Pixel Gap Enforcer: Resolve visual clumping along horizontal timeline
-        # Sort chronologically by raw screen X
+        # Pixel Gap Enforcer: Anti-clumping along the time/trajectory path
         visual_nodes.sort(key=lambda node: (node.raw_sx, node.raw_sy))
 
         gap = self.min_gap_px
         if gap > 0 and len(visual_nodes) > 1:
-            # Forward pass: ensure each bubble maintains at least `min_gap_px` clearance
-            # from the preceding bubble if they occupy similar price levels
             for i in range(1, len(visual_nodes)):
                 prev = visual_nodes[i - 1]
                 curr = visual_nodes[i]
 
-                # Check vertical proximity
                 dy = abs(curr.visual_y - prev.visual_y)
                 combined_r = prev.radius + curr.radius + gap
 
-                # If vertically overlapping or close, enforce horizontal separation
                 if dy < combined_r:
                     min_dx = math.sqrt(max(1.0, (combined_r * combined_r) - (dy * dy)))
                     required_x = prev.visual_x + min_dx
                     if curr.visual_x < required_x:
-                        # Gently offset visual_x while keeping original raw_sx in algo untouched!
                         curr.visual_x = required_x
 
-        # 3. Sort so larger bubbles are drawn behind smaller ones for crisp visibility
+        # Sort so larger bubbles are drawn behind smaller ones for crisp clarity
         visual_nodes.sort(key=lambda node: node.radius, reverse=True)
         return visual_nodes
+
+    def process_snapshot(self, snapshot: OrderFlowSnapshot, camera: Camera,
+                         min_volume_filter: float = 0.0) -> LayoutResult:
+        # 1. Project Trajectory Points to screen
+        trajectory_screen: List[QPointF] = []
+        for ts, p in snapshot.trajectory_points:
+            sx = camera.time_to_screen_x(ts)
+            sy = camera.price_to_screen_y(p)
+            trajectory_screen.append(QPointF(sx, sy))
+
+        nodes = self.process_layout(snapshot.bubbles, camera, min_volume_filter)
+
+        return LayoutResult(
+            bubbles=nodes,
+            trajectory_screen_points=trajectory_screen,
+            snapshot=snapshot
+        )

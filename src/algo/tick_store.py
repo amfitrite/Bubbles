@@ -42,6 +42,20 @@ class TickStore:
             self.version += 1
             return True
 
+    def add_ticks_batch(self, ticks: np.ndarray) -> int:
+        """
+        Batch adds an array of ticks with TICK_DTYPE.
+        """
+        added = 0
+        with self.lock:
+            for t in ticks:
+                if self.add_tick(
+                    int(t['ts']), float(t['bid']), float(t['ask']),
+                    float(t['last']), float(t['volume']), int(t['flags']), int(t['side'])
+                ):
+                    added += 1
+        return added
+
     def get_snapshot(self) -> Tuple[np.ndarray, int]:
         """
         Returns a chronologically sorted contiguous snapshot slice of available ticks
