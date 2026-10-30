@@ -72,15 +72,26 @@ class OrderFlowAlgoEngine:
         # 1. Build Interval Series (1 bubble per time bucket)
         bubbles = self._build_bubbles(visible_ticks, prices, interval_ms)
 
-        # 2. Extract Trajectory Points in visible window
-        # Downsample if dense to keep trajectory path clean and fast
-        step = max(1, len(visible_ticks) // 800)
-        sliced_ticks = visible_ticks[::step]
-        sliced_prices = prices[::step]
-        trajectory = [(int(sliced_ticks['ts'][i]), float(sliced_prices[i])) for i in range(len(sliced_ticks))]
+        # 2. Extract Trajectory Points in visible window (Rock-solid immutable historical vertices)
+        n_ticks = len(visible_ticks)
+        if n_ticks <= 1200:
+            step = 1
+        elif n_ticks <= 2400:
+            step = 2
+        elif n_ticks <= 4800:
+            step = 4
+        else:
+            step = 8
 
-        # Ensure latest tick is always included in trajectory
-        if trajectory and trajectory[-1][0] != last_ts:
+        if step == 1:
+            trajectory = [(int(visible_ticks['ts'][i]), float(prices[i])) for i in range(n_ticks)]
+        else:
+            # Fixed index alignment prevents jitter across frames
+            indices = np.arange(0, n_ticks, step)
+            trajectory = [(int(visible_ticks['ts'][idx]), float(prices[idx])) for idx in indices]
+
+        # Ensure latest live tick is always the exact live tip
+        if not trajectory or trajectory[-1][0] != last_ts:
             trajectory.append((last_ts, last_price))
 
         # 3. Macro Structure

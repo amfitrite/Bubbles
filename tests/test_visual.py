@@ -46,5 +46,21 @@ class TestVisualEngine(unittest.TestCase):
         self.assertEqual(n1.algo.price, 4000.0)
         self.assertEqual(n2.algo.price, 4000.0)
 
+    def test_auto_fit_deadband_stability(self):
+        # Initial fit to price 4000 with range 10.0 (min_price=3995, max_price=4005)
+        self.camera.center_price = 4000.0
+        self.camera.price_range = 10.0
+        self.camera.auto_fit_price = True
+
+        # When price fluctuates inside the safe margin (3997 .. 4003), scale MUST NOT MOVE
+        self.camera.update_auto_fit(3998.0, 4002.0, 0.01)
+        self.assertEqual(self.camera.center_price, 4000.0)
+        self.assertEqual(self.camera.price_range, 10.0)
+
+        # Fluctuates again inside margin
+        self.camera.update_auto_fit(3997.5, 4001.5, 0.01)
+        self.assertEqual(self.camera.center_price, 4000.0)
+        self.assertEqual(self.camera.price_range, 10.0)
+
 if __name__ == "__main__":
     unittest.main()

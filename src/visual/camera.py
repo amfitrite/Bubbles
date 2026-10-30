@@ -129,16 +129,33 @@ class Camera:
         if not self.auto_fit_price or min_p is None or max_p is None or min_p > max_p:
             return
 
-        min_range = max(10 * tick_size, self.MIN_PRICE_RANGE)
-        target_range = max(min_range, (max_p - min_p) * 1.35)
+        min_range = max(10 * tick_size, self.MIN_PRICE_RANGE, 2.0)
+
+        # Initial price snap
+        if self.center_price <= 0.0:
+            self.price_range = max(min_range, (max_p - min_p) * 1.4)
+            self.center_price = (min_p + max_p) / 2.0
+            return
+
+        cur_min = self.min_price
+        cur_max = self.max_price
+        cur_range = self.price_range
+
+        # Threshold deadband: 12% margin from top and bottom
+        margin = cur_range * 0.12
+        top_limit = cur_max - margin
+        bottom_limit = cur_min + margin
+
+        # If visible prices are comfortably within the margins, keep scale completely locked (no jitter)
+        if min_p >= bottom_limit and max_p <= top_limit:
+            return
+
+        # Price breached boundary; adjust smoothly to re-frame
+        target_range = max(min_range, max(cur_range, (max_p - min_p) * 1.35))
         target_center = (min_p + max_p) / 2.0
 
-        if self.center_price <= 0.0 or abs(self.center_price - target_center) > (self.price_range * 0.5) or target_range > self.price_range:
-            self.price_range = target_range
-            self.center_price = target_center
-        else:
-            self.price_range = lerp(self.price_range, target_range, 0.08)
-            self.center_price = lerp(self.center_price, target_center, 0.10)
+        self.price_range = lerp(self.price_range, target_range, 0.12)
+        self.center_price = lerp(self.center_price, target_center, 0.12)
 
     def reset_to_recent(self, latest_time_ms: float = None, current_price: float = None):
         self.time_span_ms = 120_000.0

@@ -228,17 +228,6 @@ class GLCanvas(BaseCanvas):
             self.camera.center_price = self.last_price
             self._price_initialized = True
 
-        min_t = self.camera.min_time
-        max_t = self.camera.max_time
-
-        ts_arr = snapshot['ts']
-        start_idx = np.searchsorted(ts_arr, min_t, side='left')
-        end_idx = np.searchsorted(ts_arr, max_t, side='right')
-        visible_ticks = snapshot[start_idx:end_idx]
-
-        # Feed new ticks into continuous algo volume profile tracker
-        self.algo.ingest_new_ticks(snapshot)
-
         # Determine interval ms
         if self.active_interval == "AUTO":
             target_ms = max(1.0, self.camera.time_span_ms / 100.0)
@@ -261,6 +250,19 @@ class GLCanvas(BaseCanvas):
         else:
             int_ms = INTERVAL_MAP.get(self.active_interval, 1000)
 
+        min_t = self.camera.min_time
+        max_t = self.camera.max_time
+
+        ts_arr = snapshot['ts']
+        # Buffer backwards so historical buckets to the left are 100% complete and their VWAP prices never mutate
+        buffered_min_t = min_t - (int_ms * 2)
+        start_idx = np.searchsorted(ts_arr, buffered_min_t, side='left')
+        end_idx = np.searchsorted(ts_arr, max_t, side='right')
+        visible_ticks = snapshot[start_idx:end_idx]
+
+        # Feed new ticks into continuous algo volume profile tracker
+        self.algo.ingest_new_ticks(snapshot)
+
         # 1. ALGO ENGINE: Compute pure mathematical snapshot
         algo_snapshot = self.algo.compute_snapshot(visible_ticks, int_ms, ver)
 
@@ -269,10 +271,13 @@ class GLCanvas(BaseCanvas):
             algo_snapshot, self.camera, min_volume_filter=self.min_volume_filter
         )
 
-        # Auto-fit price
-        if self.camera.auto_fit_price and self.current_layout.bubbles:
-            prices = [b.algo.price for b in self.current_layout.bubbles]
-            self.camera.update_auto_fit(min(prices), max(prices), self.tick_size)
+        # Auto-fit price (Stable deadband prevents jitter/jumping horizontal levels)
+        if self.camera.auto_fit_price:
+            b_prices = [b.algo.price for b in self.current_layout.bubbles] if self.current_layout and self.current_layout.bubbles else []
+            if self.last_price > 0:
+                b_prices.append(self.last_price)
+            if b_prices:
+                self.camera.update_auto_fit(min(b_prices), max(b_prices), self.tick_size)
 
     def _check_hover_tooltip(self):
         if not self.hover_mouse_pos or not self.current_layout or not self.current_layout.bubbles:
