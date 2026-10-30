@@ -14,9 +14,12 @@ build/
 dist/
 *.egg-info/
 
-# Project runtime data & logs (root directory only)
+# Project runtime data & logs
 /data/
+old_version/data/
 /logs/
+old_version/logs/
+*.log
 *.db
 *.db-wal
 *.db-shm
