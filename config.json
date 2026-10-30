@@ -7,12 +7,12 @@
   "imbalance_ratio": 3.0,
   "min_volume_filter": 0.0,
   "auto_fit_price": false,
-  "follow_live": false,
+  "follow_live": true,
   "window": {
     "width": 1366,
     "height": 768,
-    "x": 217,
-    "y": 197,
+    "x": 450,
+    "y": 289,
     "is_maximized": false
   }
 }

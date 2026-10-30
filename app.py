@@ -73,7 +73,7 @@ class BubblesApp:
 
         elif msg_type == 'META':
             logger.info(f"Received META for {symbol}: {data}")
-            self.window.on_symbol_meta(symbol, data.get('tick_size', 0.01))
+            self.window.on_symbol_meta(symbol, data.get('tick_size', 0.01), data.get('digits', 2))
 
         elif msg_type == 'SYMBOL':
             logger.info(f"Connected to symbol stream: {symbol}")

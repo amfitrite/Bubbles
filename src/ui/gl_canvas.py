@@ -17,6 +17,7 @@ from PySide6.QtCore import Qt, QTimer, QPoint, QRectF, Signal
 
 from src.algo.tick_store import TickStore
 from src.algo.accumulator import OrderFlowAlgoEngine, INTERVAL_MAP
+from src.algo.volume_profile import VolumeProfileEngine
 from src.algo.models import OrderFlowSnapshot
 from src.visual.theme import Theme
 from src.visual.camera import Camera
@@ -48,6 +49,7 @@ class GLCanvas(BaseCanvas):
         self.active_interval = "AUTO"
         self.symbol = "XAUUSD"
         self.tick_size = 0.01
+        self.digits = 2
         self.last_price = 0.0
         self.last_tick_time = 0.0
         self.is_connected = False
@@ -110,12 +112,16 @@ class GLCanvas(BaseCanvas):
         super().resizeEvent(event)
         self.camera.set_viewport_size(self.width(), self.height())
 
-    def set_symbol_info(self, symbol: str, tick_size: float = 0.01):
+    def set_symbol_info(self, symbol: str, tick_size: float = 0.01, digits: int = 2):
         if symbol:
             self.symbol = symbol
         if tick_size > 0:
             self.tick_size = tick_size
+        self.digits = max(0, int(digits))
         self._price_initialized = False
+        self._last_processed_tick_version = -1
+        self.last_rendered_version = -1
+        self.algo.reset()
 
     def set_mode(self, mode: str):
         if mode in ("SPLIT_PIE", "DELTA", "IMBALANCE", "TOTAL_VOLUME"):
@@ -264,7 +270,7 @@ class GLCanvas(BaseCanvas):
         # Feed newly arrived ticks incrementally into continuous algo volume profile tracker
         if self._last_processed_tick_version < 0 or ver < self._last_processed_tick_version:
             # First run or buffer reset/symbol change: initialize and ingest all available ticks
-            self.algo.vp_engine = VolumeProfileEngine(price_bin_size=0.50)
+            self.algo.reset()
             self.algo.ingest_new_ticks(snapshot)
             self._last_processed_tick_version = ver
         elif ver > self._last_processed_tick_version:
@@ -600,7 +606,7 @@ class GLCanvas(BaseCanvas):
         while cur_p <= self.camera.max_price + step:
             sy = self.camera.price_to_screen_y(cur_p)
             if 10 <= sy <= chart_h - 10:
-                p_str = f"{cur_p:.2f}"
+                p_str = f"{cur_p:.{self.digits}f}"
                 painter.drawText(dom_x + int(dom_w * 0.45), int(sy + 4), p_str)
             cur_p += step
 
@@ -618,7 +624,7 @@ class GLCanvas(BaseCanvas):
 
                 painter.setFont(QFont("Consolas", 8, QFont.Bold))
                 painter.setPen(Theme.PRICE_BADGE_TEXT)
-                painter.drawText(badge_rect, Qt.AlignCenter, f"{self.last_price:.2f}")
+                painter.drawText(badge_rect, Qt.AlignCenter, f"{self.last_price:.{self.digits}f}")
 
     def _draw_time_axis(self, painter: QPainter, w: int, h: int, chart_w: float,
                         chart_h: float, time_h: float):

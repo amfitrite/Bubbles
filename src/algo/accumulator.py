@@ -40,6 +40,11 @@ class OrderFlowAlgoEngine:
         self.vp_engine = VolumeProfileEngine(price_bin_size=0.50)
         self.processed_version = 0
 
+    def reset(self):
+        """Resets volume profile engine and continuous state (e.g., symbol change or buffer clear)."""
+        self.vp_engine = VolumeProfileEngine(price_bin_size=self.vp_engine.price_bin_size)
+        self.processed_version = 0
+
     def ingest_new_ticks(self, ticks: np.ndarray):
         """Updates continuous session statistics (Volume Profile, VWAP, High/Low, Trajectory)."""
         self.vp_engine.update_ticks(ticks)

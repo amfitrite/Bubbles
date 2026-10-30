@@ -62,5 +62,24 @@ class TestVisualEngine(unittest.TestCase):
         self.assertEqual(self.camera.center_price, 4000.0)
         self.assertEqual(self.camera.price_range, 10.0)
 
+    def test_canvas_symbol_info_and_rebuild(self):
+        from PySide6.QtWidgets import QApplication
+        from src.algo.tick_store import TickStore
+        from src.ui.gl_canvas import GLCanvas
+
+        _ = QApplication.instance() or QApplication([])
+        store = TickStore(max_ticks=100)
+        store.add_tick(1000, 2000.0, 2000.1, 2000.0, 1.0, 32, 1)
+
+        canvas = GLCanvas(store)
+        canvas.set_symbol_info("EURUSD", 0.0001, 5)
+        self.assertEqual(canvas.symbol, "EURUSD")
+        self.assertEqual(canvas.tick_size, 0.0001)
+        self.assertEqual(canvas.digits, 5)
+
+        # Ensure _rebuild_scene runs cleanly without NameError or TypeError
+        canvas._rebuild_scene(1000)
+        self.assertIsNotNone(canvas.current_layout)
+
 if __name__ == "__main__":
     unittest.main()

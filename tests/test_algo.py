@@ -97,5 +97,15 @@ class TestAlgoEngine(unittest.TestCase):
         self.assertEqual(snap_30s.bubbles[0].volume, 10.0) # 1 + 2 + 3 + 4 = 10
         self.assertEqual(snap_30s.bubbles[1].volume, 5.0)
 
+    def test_engine_reset(self):
+        ticks = np.array([
+            (1000, 4000.0, 4000.1, 4000.0, 10.0, 32, 1),
+        ], dtype=TICK_DTYPE)
+        self.engine.ingest_new_ticks(ticks)
+        self.assertEqual(self.engine.vp_engine.total_volume, 10.0)
+        self.engine.reset()
+        self.assertEqual(self.engine.vp_engine.total_volume, 0.0)
+        self.assertEqual(len(self.engine.vp_engine.profile), 0)
+
 if __name__ == "__main__":
     unittest.main()
