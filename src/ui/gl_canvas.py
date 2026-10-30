@@ -490,7 +490,7 @@ class GLCanvas(BaseCanvas):
         target_t_steps = max(2, int(chart_w / 120))
         raw_t_step = time_span / target_t_steps
         # Round time steps (1s, 5s, 10s, 30s, 1m, 5m, 15m, 1h, etc.)
-        nice_t_steps = [1000, 2000, 5000, 10000, 30000, 60000, 120000, 300000, 900000, 1800000, 3600000]
+        nice_t_steps = [1000, 2000, 5000, 10000, 30000, 60000, 120000, 180000, 240000, 300000, 900000, 1800000, 3600000]
         t_step = nice_t_steps[-1]
         for ns in nice_t_steps:
             if ns >= raw_t_step:
@@ -670,7 +670,7 @@ class GLCanvas(BaseCanvas):
         time_span = self.camera.time_span_ms
         target_t_steps = max(2, int(chart_w / 120))
         raw_t_step = time_span / target_t_steps
-        nice_t_steps = [1000, 2000, 5000, 10000, 30000, 60000, 120000, 300000, 900000, 1800000, 3600000]
+        nice_t_steps = [1000, 2000, 5000, 10000, 30000, 60000, 120000, 180000, 240000, 300000, 900000, 1800000, 3600000]
         t_step = nice_t_steps[-1]
         for ns in nice_t_steps:
             if ns >= raw_t_step:

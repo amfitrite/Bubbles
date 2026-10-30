@@ -97,6 +97,19 @@ class TestAlgoEngine(unittest.TestCase):
         self.assertEqual(snap_30s.bubbles[0].volume, 10.0) # 1 + 2 + 3 + 4 = 10
         self.assertEqual(snap_30s.bubbles[1].volume, 5.0)
 
+        # 2m (120s), 3m (180s), 4m (240s) timeframes: all 40s ticks fall into single 1st bucket
+        snap_2m = self.engine.compute_snapshot(ticks, interval_ms=120000, version=31)
+        self.assertEqual(len(snap_2m.bubbles), 1)
+        self.assertEqual(snap_2m.bubbles[0].volume, 15.0)
+
+        snap_3m = self.engine.compute_snapshot(ticks, interval_ms=180000, version=32)
+        self.assertEqual(len(snap_3m.bubbles), 1)
+        self.assertEqual(snap_3m.bubbles[0].volume, 15.0)
+
+        snap_4m = self.engine.compute_snapshot(ticks, interval_ms=240000, version=33)
+        self.assertEqual(len(snap_4m.bubbles), 1)
+        self.assertEqual(snap_4m.bubbles[0].volume, 15.0)
+
     def test_engine_reset(self):
         ticks = np.array([
             (1000, 4000.0, 4000.1, 4000.0, 10.0, 32, 1),

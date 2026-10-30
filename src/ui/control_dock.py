@@ -26,11 +26,11 @@ class ControlDock(QWidget):
         self.follow_live = True
         self.auto_center = True
 
-        # Complete range of timeframes including 10s, 15s, 30s
+        # Complete range of timeframes including 10s, 15s, 30s, 2m, 3m, 4m
         self.intervals = [
             '1ms', '5ms', '50ms', '100ms',
             '1s', '5s', '10s', '15s', '30s',
-            '1m', '5m', '15m', '1h', 'AUTO'
+            '1m', '2m', '3m', '4m', '5m', '15m', '1h', 'AUTO'
         ]
 
     def set_state(self, active_interval: str, gap: float, scale: float,
@@ -47,7 +47,7 @@ class ControlDock(QWidget):
         n = len(self.intervals)
         right_panel_w = 515.0
         avail = max(300.0, w - right_panel_w - 20.0)
-        btn_w = max(30.0, min(42.0, (avail - (n - 1) * 3.0) / n))
+        btn_w = max(26.0, min(38.0, (avail - (n - 1) * 3.0) / n))
         spacing = 3.0
         start_x = 8.0
         btn_y = 5.0
