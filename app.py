@@ -53,7 +53,7 @@ class BubblesApp:
             side = data.get('side', 0)
 
             # Ingest into Algo TickStore
-            self.tick_store.add_tick(
+            added = self.tick_store.add_tick(
                 ts=ts,
                 bid=data['bid'],
                 ask=data['ask'],
@@ -62,6 +62,11 @@ class BubblesApp:
                 flags=flags,
                 side=side
             )
+
+            cnt = getattr(self, '_tick_log_count', 0)
+            if cnt % 250 == 0:
+                logger.info(f"Ingested tick #{self.tick_store.count} [{symbol}] price={price:.2f} vol={vol} side={side} added={added}")
+            self._tick_log_count = cnt + 1
 
             if symbol and hasattr(self, 'window') and self.window.canvas.symbol != symbol:
                 self.window.on_symbol_meta(symbol)
@@ -73,6 +78,12 @@ class BubblesApp:
         elif msg_type == 'SYMBOL':
             logger.info(f"Connected to symbol stream: {symbol}")
             self.window.on_symbol_meta(symbol)
+
+        elif msg_type == 'HIST_START':
+            logger.info(f"Receiving historical ticks for {symbol}: count={data.get('count', 0)}")
+
+        elif msg_type == 'HIST_END':
+            logger.info(f"Finished receiving historical ticks for {symbol}. Total in store: {self.tick_store.count}")
 
     def run(self):
         logger.info("Starting Bubbles Terminal...")

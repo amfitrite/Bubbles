@@ -124,7 +124,7 @@ class SettingsPanel(QWidget):
         self.btn_autofit.clicked.connect(self._toggle_autofit)
         layout.addWidget(self.btn_autofit)
 
-        self.btn_live = QPushButton("FOLLOW LIVE TIME: ON")
+        self.btn_live = QPushButton("AUTO SCROLL: ON")
         self.btn_live.clicked.connect(self._toggle_live)
         layout.addWidget(self.btn_live)
 
@@ -158,7 +158,7 @@ class SettingsPanel(QWidget):
 
     def _toggle_live(self):
         self._live_val = not self._live_val
-        self.btn_live.setText(f"FOLLOW LIVE TIME: {'ON' if self._live_val else 'OFF'}")
+        self.btn_live.setText(f"AUTO SCROLL: {'ON' if self._live_val else 'OFF'}")
         self.follow_live_toggled.emit(self._live_val)
 
     def update_values(self, gap: float, scale: float, autofit: bool, live: bool):
@@ -167,4 +167,4 @@ class SettingsPanel(QWidget):
         self._autofit_val = autofit
         self.btn_autofit.setText(f"AUTO-FIT PRICE: {'ON' if autofit else 'OFF'}")
         self._live_val = live
-        self.btn_live.setText(f"FOLLOW LIVE TIME: {'ON' if live else 'OFF'}")
+        self.btn_live.setText(f"AUTO SCROLL: {'ON' if live else 'OFF'}")

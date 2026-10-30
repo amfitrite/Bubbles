@@ -102,6 +102,14 @@ class GLCanvas(BaseCanvas):
 
     def set_interval(self, interval_name: str):
         self.active_interval = interval_name
+        int_ms = INTERVAL_MAP.get(interval_name, 0)
+        if int_ms > 0:
+            min_needed_span = float(int_ms * 10)
+            if self.camera.time_span_ms < min_needed_span:
+                self.camera.time_span_ms = min_needed_span
+                latest_ts = self.tick_store.last_ts if self.tick_store else 0
+                if self.camera.follow_live and latest_ts > 0:
+                    self.camera.update_follow_live(latest_ts)
         self.last_rendered_version = -1
         self.update()
 
@@ -129,7 +137,14 @@ class GLCanvas(BaseCanvas):
         self.camera.auto_fit_price = not self.camera.auto_fit_price if val is None else val
 
     def toggle_follow_live(self, val: bool = None):
-        self.camera.follow_live = not self.camera.follow_live if val is None else val
+        new_val = not self.camera.follow_live if val is None else val
+        self.camera.follow_live = new_val
+        if new_val:
+            latest_ts = self.tick_store.last_ts if self.tick_store else 0
+            if latest_ts > 0:
+                self.camera.update_follow_live(latest_ts)
+        self.last_rendered_version = -1
+        self.update()
 
     def reset_camera(self):
         latest_ts = self.tick_store.last_ts if self.tick_store else 0
@@ -343,6 +358,26 @@ class GLCanvas(BaseCanvas):
         # 7. DRAW BOTTOM TIME AXIS RAIL
         # -------------------------------------------------------------
         self._draw_time_axis(painter, w, h, chart_w, chart_h, time_h)
+
+        # -------------------------------------------------------------
+        # 8. FLOATING AUTO SCROLL PILL (When paused by user navigation)
+        # -------------------------------------------------------------
+        if not self.camera.follow_live:
+            pill_w = 116
+            pill_h = 24
+            pill_x = chart_w - pill_w - 12
+            pill_y = chart_h - pill_h - 10
+            self._pill_rect = QRectF(pill_x, pill_y, pill_w, pill_h)
+
+            painter.setBrush(QBrush(QColor(15, 23, 42, 230)))
+            painter.setPen(QPen(Theme.STATUS_LIVE, 1.2))
+            painter.drawRoundedRect(self._pill_rect, 12, 12)
+
+            painter.setFont(QFont("Consolas", 8, QFont.Bold))
+            painter.setPen(Theme.STATUS_LIVE)
+            painter.drawText(self._pill_rect, Qt.AlignCenter, "▶ AUTO SCROLL")
+        else:
+            self._pill_rect = None
 
         painter.end()
 
@@ -586,6 +621,12 @@ class GLCanvas(BaseCanvas):
         event.accept()
 
     def mousePressEvent(self, event):
+        # Click on floating auto-scroll pill button
+        if hasattr(self, '_pill_rect') and self._pill_rect and self._pill_rect.contains(event.position()):
+            self.toggle_follow_live(True)
+            event.accept()
+            return
+
         if event.button() == Qt.LeftButton:
             self.is_left_dragging = True
             self.last_mouse_pos = event.pos()
@@ -603,6 +644,12 @@ class GLCanvas(BaseCanvas):
             self.camera.pan(delta.x(), delta.y())
         elif self.is_right_dragging:
             self.camera.stretch(delta.x(), delta.y())
+
+        # Update cursor when hovering over the auto-scroll button
+        if hasattr(self, '_pill_rect') and self._pill_rect and self._pill_rect.contains(event.position()):
+            self.setCursor(Qt.PointingHandCursor)
+        else:
+            self.setCursor(Qt.ArrowCursor)
 
         self.hover_mouse_pos = event.pos()
         event.accept()
@@ -633,7 +680,7 @@ class GLCanvas(BaseCanvas):
             self.reset_camera()
         elif key == Qt.Key_F:
             self.toggle_autofit()
-        elif key == Qt.Key_L:
+        elif key in (Qt.Key_L, Qt.Key_A):
             self.toggle_follow_live()
         else:
             super().keyPressEvent(event)

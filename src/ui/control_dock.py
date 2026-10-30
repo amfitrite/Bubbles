@@ -2,12 +2,12 @@ from PySide6.QtWidgets import QWidget
 from PySide6.QtGui import QPainter, QFont, QPen, QBrush, QColor
 from PySide6.QtCore import Qt, QRectF, Signal
 from src.visual.theme import Theme
-from src.algo.accumulator import INTERVAL_OPTIONS
 
 class ControlDock(QWidget):
     """
     Floating Bottom Studio Dock (32px height).
-    Minimalist flat buttons for instant interval switching and visual gap/scale micro-adjustments.
+    Provides instant timeframe switching (1ms .. 1h, AUTO),
+    Micro Gap/Scale adjustments, FIT, and AUTO SCROLL controls.
     """
     interval_selected = Signal(str)
     gap_changed = Signal(float)
@@ -19,13 +19,17 @@ class ControlDock(QWidget):
         super().__init__(parent)
         self.setFixedHeight(32)
         self.active_interval = "AUTO"
-        self.min_gap_px = 5.0
+        self.min_gap_px = 6.0
         self.size_scale = 1.0
         self.auto_fit = True
         self.follow_live = True
 
-        # Common intervals visible on the dock
-        self.intervals = ['1ms', '5ms', '50ms', '100ms', '1s', '5s', '1m', '5m', '15m', '1h', 'AUTO']
+        # Complete range of timeframes including 10s, 15s, 30s
+        self.intervals = [
+            '1ms', '5ms', '50ms', '100ms',
+            '1s', '5s', '10s', '15s', '30s',
+            '1m', '5m', '15m', '1h', 'AUTO'
+        ]
 
     def set_state(self, active_interval: str, gap: float, scale: float,
                   auto_fit: bool, follow_live: bool):
@@ -36,6 +40,53 @@ class ControlDock(QWidget):
         self.follow_live = follow_live
         self.update()
 
+    def _get_interval_rects(self, w: float):
+        n = len(self.intervals)
+        right_panel_w = 425.0
+        avail = max(300.0, w - right_panel_w - 20.0)
+        btn_w = max(30.0, min(42.0, (avail - (n - 1) * 3.0) / n))
+        spacing = 3.0
+        start_x = 8.0
+        btn_y = 5.0
+        btn_h = 22.0
+
+        rects = []
+        for i in range(n):
+            bx = start_x + (i * (btn_w + spacing))
+            rects.append(QRectF(bx, btn_y, btn_w, btn_h))
+        return rects
+
+    def _get_right_control_rects(self, w: float):
+        btn_y = 5.0
+        btn_h = 22.0
+        rx = w - 425.0
+
+        rect_gm = QRectF(rx + 54, btn_y, 18, btn_h)
+        rect_gp = QRectF(rx + 74, btn_y, 18, btn_h)
+
+        sx = rx + 104
+        rect_sm = QRectF(sx + 72, btn_y, 18, btn_h)
+        rect_sp = QRectF(sx + 92, btn_y, 18, btn_h)
+
+        fx = sx + 120
+        rect_fit = QRectF(fx, btn_y, 36, btn_h)
+
+        lx = fx + 42
+        rect_autoscroll = QRectF(lx, btn_y, 102, btn_h)
+
+        return {
+            'rx': rx,
+            'rect_gm': rect_gm,
+            'rect_gp': rect_gp,
+            'sx': sx,
+            'rect_sm': rect_sm,
+            'rect_sp': rect_sp,
+            'fx': fx,
+            'rect_fit': rect_fit,
+            'lx': lx,
+            'rect_autoscroll': rect_autoscroll
+        }
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
@@ -45,26 +96,21 @@ class ControlDock(QWidget):
         h = self.height()
 
         # Matte Dark Dock Bar
-        painter.fillRect(0, 0, w, h, QColor(14, 17, 23, 240))
+        painter.fillRect(0, 0, w, h, QColor(14, 17, 23, 245))
         painter.setPen(QPen(Theme.BORDER_HAIRLINE, 1.0))
         painter.drawLine(0, 0, w, 0)
 
         # -------------------------------------------------------------
-        # 1. LEFT: Interval Strip
+        # 1. LEFT: Dynamic Timeframe Strip (10s, 15s, 30s included)
         # -------------------------------------------------------------
-        btn_w = 46
-        btn_h = 22
-        btn_y = 5
-        start_x = 10
-
+        interval_rects = self._get_interval_rects(w)
         font_btn = QFont("Consolas", 8, QFont.Bold)
         painter.setFont(font_btn)
 
         for i, int_name in enumerate(self.intervals):
-            bx = start_x + (i * (btn_w + 4))
-            rect = QRectF(bx, btn_y, btn_w, btn_h)
-
+            rect = interval_rects[i]
             is_active = (self.active_interval == int_name)
+
             if is_active:
                 painter.setBrush(QBrush(QColor(30, 41, 59)))
                 painter.setPen(QPen(Theme.BORDER_ACTIVE, 1.0))
@@ -79,31 +125,25 @@ class ControlDock(QWidget):
             painter.drawText(rect, Qt.AlignCenter, int_name)
 
         # -------------------------------------------------------------
-        # 2. RIGHT: GAP, SCALE, FIT, LIVE Controls
+        # 2. RIGHT: GAP, SCALE, FIT, and AUTO SCROLL Controls
         # -------------------------------------------------------------
-        rx = w - 380
+        rc = self._get_right_control_rects(w)
 
-        # Gap adjustment: GAP: 5px [-] [+]
+        # GAP Controls: GAP: 6px [-] [+]
         painter.setFont(QFont("Consolas", 8))
         painter.setPen(Theme.TEXT_SECONDARY)
-        painter.drawText(rx, 20, f"GAP:{int(self.min_gap_px)}px")
+        painter.drawText(int(rc['rx']), 20, f"GAP:{int(self.min_gap_px)}px")
 
-        # Gap [-] and [+]
-        rect_gm = QRectF(rx + 60, btn_y, 18, btn_h)
-        rect_gp = QRectF(rx + 82, btn_y, 18, btn_h)
-        for r_btn, txt in [(rect_gm, "-"), (rect_gp, "+")]:
+        for r_btn, txt in [(rc['rect_gm'], "-"), (rc['rect_gp'], "+")]:
             painter.setBrush(QBrush(QColor(18, 22, 29)))
             painter.setPen(QPen(Theme.BORDER_HAIRLINE, 1.0))
             painter.drawRoundedRect(r_btn, 2, 2)
             painter.setPen(Theme.TEXT_SECONDARY)
             painter.drawText(r_btn, Qt.AlignCenter, txt)
 
-        # Scale adjustment: SCALE: 1.0x [-] [+]
-        sx = rx + 120
-        painter.drawText(sx, 20, f"SCALE:{self.size_scale:.1f}x")
-        rect_sm = QRectF(sx + 78, btn_y, 18, btn_h)
-        rect_sp = QRectF(sx + 100, btn_y, 18, btn_h)
-        for r_btn, txt in [(rect_sm, "-"), (rect_sp, "+")]:
+        # SCALE Controls: SCALE: 1.0x [-] [+]
+        painter.drawText(int(rc['sx']), 20, f"SCALE:{self.size_scale:.1f}x")
+        for r_btn, txt in [(rc['rect_sm'], "-"), (rc['rect_sp'], "+")]:
             painter.setBrush(QBrush(QColor(18, 22, 29)))
             painter.setPen(QPen(Theme.BORDER_HAIRLINE, 1.0))
             painter.drawRoundedRect(r_btn, 2, 2)
@@ -111,78 +151,72 @@ class ControlDock(QWidget):
             painter.drawText(r_btn, Qt.AlignCenter, txt)
 
         # FIT Button
-        fx = sx + 135
-        rect_fit = QRectF(fx, btn_y, 40, btn_h)
         painter.setBrush(QBrush(QColor(30, 41, 59) if self.auto_fit else QColor(18, 22, 29)))
         painter.setPen(QPen(Theme.BORDER_ACTIVE if self.auto_fit else Theme.BORDER_HAIRLINE, 1.0))
-        painter.drawRoundedRect(rect_fit, 2, 2)
+        painter.drawRoundedRect(rc['rect_fit'], 2, 2)
         painter.setPen(Theme.TEXT_PRIMARY if self.auto_fit else Theme.TEXT_MUTED)
-        painter.drawText(rect_fit, Qt.AlignCenter, "FIT")
+        painter.drawText(rc['rect_fit'], Qt.AlignCenter, "FIT")
 
-        # LIVE Button
-        lx = fx + 46
-        rect_live = QRectF(lx, btn_y, 48, btn_h)
-        painter.setBrush(QBrush(QColor(16, 185, 129, 30) if self.follow_live else QColor(18, 22, 29)))
-        painter.setPen(QPen(Theme.STATUS_LIVE if self.follow_live else Theme.BORDER_HAIRLINE, 1.0))
-        painter.drawRoundedRect(rect_live, 2, 2)
-        painter.setPen(Theme.STATUS_LIVE if self.follow_live else Theme.TEXT_MUTED)
-        painter.drawText(rect_live, Qt.AlignCenter, "● LIVE" if self.follow_live else "PAUSE")
+        # AUTO SCROLL Button
+        r_asc = rc['rect_autoscroll']
+        if self.follow_live:
+            painter.setBrush(QBrush(QColor(16, 185, 129, 35)))
+            painter.setPen(QPen(Theme.STATUS_LIVE, 1.0))
+            painter.drawRoundedRect(r_asc, 2, 2)
+            painter.setFont(QFont("Consolas", 8, QFont.Bold))
+            painter.setPen(Theme.STATUS_LIVE)
+            painter.drawText(r_asc, Qt.AlignCenter, "● AUTO SCROLL")
+        else:
+            painter.setBrush(QBrush(QColor(18, 22, 29)))
+            painter.setPen(QPen(Theme.BORDER_HAIRLINE, 1.0))
+            painter.drawRoundedRect(r_asc, 2, 2)
+            painter.setFont(QFont("Consolas", 8, QFont.Bold))
+            painter.setPen(Theme.TEXT_MUTED)
+            painter.drawText(r_asc, Qt.AlignCenter, "▶ AUTO SCROLL")
 
         painter.end()
 
     def mousePressEvent(self, event):
         pos = event.position()
         w = self.width()
-        btn_y = 5
-        btn_h = 22
-
-        if not (btn_y <= pos.y() <= btn_y + btn_h):
-            event.ignore()
-            return
 
         # 1. Check Interval buttons
-        btn_w = 46
-        start_x = 10
-        for i, int_name in enumerate(self.intervals):
-            bx = start_x + (i * (btn_w + 4))
-            if bx <= pos.x() <= bx + btn_w:
-                self.interval_selected.emit(int_name)
+        interval_rects = self._get_interval_rects(w)
+        for i, rect in enumerate(interval_rects):
+            if rect.contains(pos):
+                self.interval_selected.emit(self.intervals[i])
                 event.accept()
                 return
 
-        # 2. Check Right Action buttons
-        rx = w - 380
-        # Gap - and +
-        if (rx + 60) <= pos.x() <= (rx + 78):
+        # 2. Check Right Controls
+        rc = self._get_right_control_rects(w)
+
+        if rc['rect_gm'].contains(pos):
             self.gap_changed.emit(max(0.0, self.min_gap_px - 1.0))
             event.accept()
             return
-        if (rx + 82) <= pos.x() <= (rx + 100):
+
+        if rc['rect_gp'].contains(pos):
             self.gap_changed.emit(min(25.0, self.min_gap_px + 1.0))
             event.accept()
             return
 
-        # Scale - and +
-        sx = rx + 120
-        if (sx + 78) <= pos.x() <= (sx + 96):
+        if rc['rect_sm'].contains(pos):
             self.scale_changed.emit(max(0.4, self.size_scale - 0.1))
             event.accept()
             return
-        if (sx + 100) <= pos.x() <= (sx + 118):
+
+        if rc['rect_sp'].contains(pos):
             self.scale_changed.emit(min(3.0, self.size_scale + 0.1))
             event.accept()
             return
 
-        # FIT button
-        fx = sx + 135
-        if fx <= pos.x() <= fx + 40:
+        if rc['rect_fit'].contains(pos):
             self.autofit_toggled.emit()
             event.accept()
             return
 
-        # LIVE button
-        lx = fx + 46
-        if lx <= pos.x() <= lx + 48:
+        if rc['rect_autoscroll'].contains(pos):
             self.follow_live_toggled.emit()
             event.accept()
             return
