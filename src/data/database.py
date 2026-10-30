@@ -103,6 +103,13 @@ class DatabaseManager:
         if self.thread:
             self.thread.join(timeout=2.0)
 
+    # Aliases for standard lifecycle interface
+    def start(self):
+        self.start_writer()
+
+    def stop(self):
+        self.stop_writer()
+
     def enqueue_ticks(self, symbol, ticks):
         if not self.running:
             return
