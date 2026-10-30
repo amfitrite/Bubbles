@@ -84,6 +84,9 @@ class SettingsPanel(QWidget):
         self.slider_gap = QSlider(Qt.Horizontal)
         self.slider_gap.setRange(0, 25)
         self.slider_gap.setValue(6)
+        self.slider_gap.setCursor(Qt.PointingHandCursor)
+        self.slider_gap.setToolTip("Adjust minimum gap between bubbles (0-25px)")
+        self.slider_gap.setAccessibleName("Minimum pixel gap slider")
         self.slider_gap.valueChanged.connect(self._on_gap_slider)
         layout.addWidget(self.slider_gap)
 
@@ -93,6 +96,9 @@ class SettingsPanel(QWidget):
         self.slider_scale = QSlider(Qt.Horizontal)
         self.slider_scale.setRange(4, 30) # 0.4x to 3.0x
         self.slider_scale.setValue(10)
+        self.slider_scale.setCursor(Qt.PointingHandCursor)
+        self.slider_scale.setToolTip("Adjust overall bubble size multiplier (0.4x-3.0x)")
+        self.slider_scale.setAccessibleName("Bubble scale slider")
         self.slider_scale.valueChanged.connect(self._on_scale_slider)
         layout.addWidget(self.slider_scale)
 
@@ -102,6 +108,9 @@ class SettingsPanel(QWidget):
         self.slider_imb = QSlider(Qt.Horizontal)
         self.slider_imb.setRange(15, 80) # 1.5x to 8.0x
         self.slider_imb.setValue(30)
+        self.slider_imb.setCursor(Qt.PointingHandCursor)
+        self.slider_imb.setToolTip("Ratio required to trigger stacked imbalance highlights (1.5x-8.0x)")
+        self.slider_imb.setAccessibleName("Imbalance ratio slider")
         self.slider_imb.valueChanged.connect(self._on_imb_slider)
         layout.addWidget(self.slider_imb)
 
@@ -111,6 +120,9 @@ class SettingsPanel(QWidget):
         self.slider_min_vol = QSlider(Qt.Horizontal)
         self.slider_min_vol.setRange(0, 50) # 0 to 50 lots
         self.slider_min_vol.setValue(0)
+        self.slider_min_vol.setCursor(Qt.PointingHandCursor)
+        self.slider_min_vol.setToolTip("Hide bubbles with total volume below this threshold")
+        self.slider_min_vol.setAccessibleName("Minimum volume filter slider")
         self.slider_min_vol.valueChanged.connect(self._on_min_vol_slider)
         layout.addWidget(self.slider_min_vol)
 
@@ -123,8 +135,17 @@ class SettingsPanel(QWidget):
         fps_row.setSpacing(6)
 
         self.btn_fps_60 = QPushButton("60")
+        self.btn_fps_60.setCursor(Qt.PointingHandCursor)
+        self.btn_fps_60.setToolTip("Limit to 60 FPS for power efficiency")
+        self.btn_fps_60.setAccessibleName("Set FPS to 60")
         self.btn_fps_120 = QPushButton("120")
+        self.btn_fps_120.setCursor(Qt.PointingHandCursor)
+        self.btn_fps_120.setToolTip("Limit to 120 FPS for smooth high-refresh monitors")
+        self.btn_fps_120.setAccessibleName("Set FPS to 120")
         self.btn_fps_max = QPushButton("MAX")
+        self.btn_fps_max.setCursor(Qt.PointingHandCursor)
+        self.btn_fps_max.setToolTip("Unlimited FPS for maximum rendering speed (higher CPU/GPU usage)")
+        self.btn_fps_max.setAccessibleName("Set FPS to maximum")
 
         self.btn_fps_60.clicked.connect(lambda: self._on_fps_btn("60"))
         self.btn_fps_120.clicked.connect(lambda: self._on_fps_btn("120"))
@@ -138,14 +159,23 @@ class SettingsPanel(QWidget):
         # 6. Camera Toggles
         layout.addSpacing(10)
         self.btn_autofit = QPushButton("AUTO-FIT PRICE: ON")
+        self.btn_autofit.setCursor(Qt.PointingHandCursor)
+        self.btn_autofit.setToolTip("Automatically scale vertical price axis to fit all bubbles")
+        self.btn_autofit.setAccessibleName("Toggle Auto-Fit Price")
         self.btn_autofit.clicked.connect(self._toggle_autofit)
         layout.addWidget(self.btn_autofit)
 
         self.btn_autocenter = QPushButton("AUTO CENTER: ON")
+        self.btn_autocenter.setCursor(Qt.PointingHandCursor)
+        self.btn_autocenter.setToolTip("Keep latest bubbles vertically centered")
+        self.btn_autocenter.setAccessibleName("Toggle Auto Center")
         self.btn_autocenter.clicked.connect(self._toggle_autocenter)
         layout.addWidget(self.btn_autocenter)
 
         self.btn_live = QPushButton("AUTO SCROLL: ON")
+        self.btn_live.setCursor(Qt.PointingHandCursor)
+        self.btn_live.setToolTip("Automatically pan horizontal axis to follow new data")
+        self.btn_live.setAccessibleName("Toggle Auto Scroll")
         self.btn_live.clicked.connect(self._toggle_live)
         layout.addWidget(self.btn_live)
 
