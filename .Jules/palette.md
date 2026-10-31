@@ -1,0 +1,3 @@
+## 2026-10-28 - Explicit Affordances for Custom PySide6 Widgets
+**Learning:** In desktop applications using PySide6, especially when applying custom stylesheet styling to standard widgets like `QPushButton` or `QSlider`, the framework does not automatically imply interactivity with standard desktop affordances. Missing pointer cursors on hover and lacking tooltips can make interactive controls feel like static text or decorations.
+**Action:** Always explicitly add `.setCursor(Qt.PointingHandCursor)`, `.setToolTip()`, and `.setAccessibleName()` to all custom-styled interactive widgets to maintain standard desktop UX accessibility and interactivity cues.
