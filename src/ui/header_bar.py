@@ -14,6 +14,7 @@ class HeaderBar(QWidget):
     fps_target_selected = Signal(str)     # "60", "120", "UNLIMITED"
     settings_toggled = Signal()
     reset_camera_clicked = Signal()
+    symbol_clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -182,7 +183,13 @@ class HeaderBar(QWidget):
         pos = event.position()
         w = self.width()
 
-        # 1. Check Mode Buttons
+        # 1. Check Symbol Click
+        if 10 <= pos.x() <= 90 and 5 <= pos.y() <= 32:
+            self.symbol_clicked.emit()
+            event.accept()
+            return
+
+        # 2. Check Mode Buttons
         btn_w = 90
         total_w = btn_w * 4
         start_x = (w - total_w) / 2.0

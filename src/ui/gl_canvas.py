@@ -34,12 +34,27 @@ class GLCanvas(BaseCanvas):
     telemetry_updated = Signal(str, float, bool, float, float, str, str)
     dock_updated = Signal(str, float, float, bool, bool, bool)
 
-    def __init__(self, tick_store: TickStore, parent=None):
+    def __init__(self, tick_store: TickStore = None, parent=None, symbol_manager=None):
         super().__init__(parent)
-        self.tick_store = tick_store
+        self.symbol_manager = symbol_manager
+
+        if symbol_manager is not None:
+            active_state = symbol_manager.get_active()
+            self.tick_store = active_state.tick_store
+            self.algo = active_state.algo_engine
+            self.symbol = active_state.symbol
+            self.tick_size = active_state.tick_size
+            self.digits = active_state.digits
+            self.last_price = active_state.last_known_price
+        else:
+            self.tick_store = tick_store
+            self.algo = OrderFlowAlgoEngine(imbalance_ratio_threshold=3.0)
+            self.symbol = "XAUUSD"
+            self.tick_size = 0.01
+            self.digits = 2
+            self.last_price = 0.0
 
         # Engines
-        self.algo = OrderFlowAlgoEngine(imbalance_ratio_threshold=3.0)
         self.camera = Camera(self.width(), self.height(), dom_width=100, time_height=24)
         self.sprite_engine = SpriteEngine()
         self.layout_engine = VisualLayoutEngine(min_gap_px=6.0, size_scale=1.0)
@@ -47,10 +62,6 @@ class GLCanvas(BaseCanvas):
         # Presentation State
         self.active_mode = "TOTAL_VOLUME" # 'SPLIT_PIE', 'DELTA', 'IMBALANCE', 'TOTAL_VOLUME'
         self.active_interval = "AUTO"
-        self.symbol = "XAUUSD"
-        self.tick_size = 0.01
-        self.digits = 2
-        self.last_price = 0.0
         self.last_tick_time = 0.0
         self.is_connected = False
         self._price_initialized = False
@@ -112,16 +123,50 @@ class GLCanvas(BaseCanvas):
         super().resizeEvent(event)
         self.camera.set_viewport_size(self.width(), self.height())
 
-    def set_symbol_info(self, symbol: str, tick_size: float = 0.01, digits: int = 2):
-        if symbol:
-            self.symbol = symbol
-        if tick_size > 0:
-            self.tick_size = tick_size
-        self.digits = max(0, int(digits))
+    def bind_symbol_state(self, state):
+        """
+        Seamlessly bind canvas to an isolated SymbolState without wiping or
+        corrupting other instruments' historical buffers.
+        """
+        self.tick_store = state.tick_store
+        self.algo = state.algo_engine
+        self.symbol = state.symbol
+        self.tick_size = state.tick_size
+        self.digits = state.digits
+        self.last_price = state.last_known_price
         self._price_initialized = False
         self._last_processed_tick_version = -1
         self.last_rendered_version = -1
-        self.algo.reset()
+        self.current_layout = None
+        if state.last_known_price > 0:
+            self.camera.center_price = state.last_known_price
+        if self.tick_store and self.tick_store.last_ts > 0:
+            self.camera.update_follow_live(self.tick_store.last_ts)
+        self.update()
+
+    def switch_symbol(self, symbol: str):
+        if not self.symbol_manager:
+            return
+        state = self.symbol_manager.set_active(symbol)
+        if state:
+            self.bind_symbol_state(state)
+
+    def set_symbol_info(self, symbol: str, tick_size: float = 0.01, digits: int = 2):
+        if self.symbol_manager:
+            state = self.symbol_manager.get_or_create(symbol)
+            state.configure_meta(tick_size=tick_size, digits=digits)
+            if symbol and (self.symbol == symbol or self.symbol == "UNKNOWN"):
+                self.bind_symbol_state(state)
+        else:
+            if symbol:
+                self.symbol = symbol
+            if tick_size > 0:
+                self.tick_size = tick_size
+            self.digits = max(0, int(digits))
+            self._price_initialized = False
+            self._last_processed_tick_version = -1
+            self.last_rendered_version = -1
+            self.algo.reset()
 
     def set_mode(self, mode: str):
         if mode in ("SPLIT_PIE", "DELTA", "IMBALANCE", "TOTAL_VOLUME"):
@@ -519,7 +564,7 @@ class GLCanvas(BaseCanvas):
                 painter.drawLine(0, int(sy), int(chart_w), int(sy))
                 painter.setFont(QFont("Consolas", 7))
                 painter.setPen(Theme.LINE_HIGH)
-                painter.drawText(6, int(sy) - 3, f"HIGH {macro.session_high:.2f}")
+                painter.drawText(6, int(sy) - 3, f"HIGH {macro.session_high:.{self.digits}f}")
 
         # 2. Session Low (Dashed Green Line)
         if macro.session_low > 0:
@@ -530,7 +575,7 @@ class GLCanvas(BaseCanvas):
                 painter.drawLine(0, int(sy), int(chart_w), int(sy))
                 painter.setFont(QFont("Consolas", 7))
                 painter.setPen(Theme.LINE_LOW)
-                painter.drawText(6, int(sy) + 11, f"LOW {macro.session_low:.2f}")
+                painter.drawText(6, int(sy) + 11, f"LOW {macro.session_low:.{self.digits}f}")
 
         # 3. Session VWAP (Cyan Dotted Line)
         if macro.session_vwap > 0:
@@ -541,7 +586,7 @@ class GLCanvas(BaseCanvas):
                 painter.drawLine(0, int(sy), int(chart_w), int(sy))
                 painter.setFont(QFont("Consolas", 7, QFont.Bold))
                 painter.setPen(Theme.LINE_VWAP)
-                painter.drawText(int(chart_w * 0.4), int(sy) - 3, f"SESSION VWAP {macro.session_vwap:.2f}")
+                painter.drawText(int(chart_w * 0.4), int(sy) - 3, f"SESSION VWAP {macro.session_vwap:.{self.digits}f}")
 
         # 4. Point of Control / POC (Amber Line)
         if macro.poc_price > 0:
@@ -552,7 +597,29 @@ class GLCanvas(BaseCanvas):
                 painter.drawLine(0, int(sy), int(chart_w), int(sy))
                 painter.setFont(QFont("Consolas", 7, QFont.Bold))
                 painter.setPen(Theme.LINE_POC)
-                painter.drawText(int(chart_w * 0.65), int(sy) - 3, f"POC {macro.poc_price:.2f}")
+                painter.drawText(int(chart_w * 0.65), int(sy) - 3, f"POC {macro.poc_price:.{self.digits}f}")
+
+        # 5. Value Area High / VAH (Teal Dot-Dash Line)
+        if macro.value_area_high > 0 and abs(macro.value_area_high - macro.session_high) > (self.tick_size * 2):
+            sy = self.camera.price_to_screen_y(macro.value_area_high)
+            if 0 <= sy <= chart_h:
+                pen = QPen(QColor(13, 148, 136, 170), 1.0, Qt.DashDotLine)
+                painter.setPen(pen)
+                painter.drawLine(0, int(sy), int(chart_w), int(sy))
+                painter.setFont(QFont("Consolas", 7))
+                painter.setPen(QColor(13, 148, 136))
+                painter.drawText(int(chart_w * 0.2), int(sy) - 3, f"VAH {macro.value_area_high:.{self.digits}f}")
+
+        # 6. Value Area Low / VAL (Teal Dot-Dash Line)
+        if macro.value_area_low > 0 and abs(macro.value_area_low - macro.session_low) > (self.tick_size * 2):
+            sy = self.camera.price_to_screen_y(macro.value_area_low)
+            if 0 <= sy <= chart_h:
+                pen = QPen(QColor(13, 148, 136, 170), 1.0, Qt.DashDotLine)
+                painter.setPen(pen)
+                painter.drawLine(0, int(sy), int(chart_w), int(sy))
+                painter.setFont(QFont("Consolas", 7))
+                painter.setPen(QColor(13, 148, 136))
+                painter.drawText(int(chart_w * 0.2), int(sy) + 11, f"VAL {macro.value_area_low:.{self.digits}f}")
 
         painter.setClipping(False)
 

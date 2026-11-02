@@ -1,7 +1,7 @@
 {
-  "fps_limit": "120",
+  "fps_limit": "60",
   "active_mode": "SPLIT_PIE",
-  "active_interval": "1m",
+  "active_interval": "5m",
   "min_gap_px": 6.0,
   "size_scale": 1.0,
   "imbalance_ratio": 3.0,

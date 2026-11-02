@@ -137,21 +137,36 @@ class OrderFlowAlgoEngine:
         sides = ticks['side']
         flags = ticks['flags']
 
-        # Vectorized pre-computation across entire slice
+        # Vectorized volume classification per tick (Strict Aggressor + Inferred + Neutral)
         pv = prices * volumes
-        buy_mask = (sides == 1) | ((flags & 32) != 0)
-        sell_mask = (sides == -1) | ((flags & 64) != 0)
-        neutral_mask = ~buy_mask & ~sell_mask
+        price_diff = np.diff(prices, prepend=prices[0])
+        is_conf_buy = (sides == 1) | ((flags & 32) != 0)
+        is_conf_sell = ((sides == -1) | ((flags & 64) != 0)) & ~is_conf_buy
+        is_unclassified = ~is_conf_buy & ~is_conf_sell
+        is_inf_buy = ((sides == 2) | ((sides == 0) & (price_diff > 0))) & is_unclassified
+        is_inf_sell = ((sides == -2) | ((sides == 0) & (price_diff < 0))) & is_unclassified & ~is_inf_buy
+        is_neutral = is_unclassified & ~is_inf_buy & ~is_inf_sell
 
-        # Assign volume proportions per tick (50/50 split for neutral ticks)
-        tick_buy_vol = np.where(buy_mask, volumes, np.where(neutral_mask, volumes * 0.5, 0.0))
-        tick_sell_vol = np.where(sell_mask, volumes, np.where(neutral_mask, volumes * 0.5, 0.0))
+        tick_conf_buy = np.where(is_conf_buy, volumes, 0.0)
+        tick_conf_sell = np.where(is_conf_sell, volumes, 0.0)
+        tick_inf_buy = np.where(is_inf_buy, volumes, 0.0)
+        tick_inf_sell = np.where(is_inf_sell, volumes, 0.0)
+        tick_neutral = np.where(is_neutral, volumes, 0.0)
+
+        # Total directional volume without fake 50:50 pollution
+        tick_buy_vol = tick_conf_buy + tick_inf_buy
+        tick_sell_vol = tick_conf_sell + tick_inf_sell
 
         # Vectorized bucket reduction in pure C (O(N) single-pass)
         tot_vols = np.add.reduceat(volumes, starts)
         sum_pvs = np.add.reduceat(pv, starts)
         buy_vols = np.add.reduceat(tick_buy_vol, starts)
         sell_vols = np.add.reduceat(tick_sell_vol, starts)
+        conf_buy_vols = np.add.reduceat(tick_conf_buy, starts)
+        conf_sell_vols = np.add.reduceat(tick_conf_sell, starts)
+        inf_buy_vols = np.add.reduceat(tick_inf_buy, starts)
+        inf_sell_vols = np.add.reduceat(tick_inf_sell, starts)
+        neutral_vols = np.add.reduceat(tick_neutral, starts)
 
         vwaps = np.where(tot_vols > 0, sum_pvs / np.maximum(1e-12, tot_vols), 0.0)
         deltas = buy_vols - sell_vols
@@ -177,7 +192,7 @@ class OrderFlowAlgoEngine:
             time_center = int(time_centers[i])
             t_count = int(tick_counts[i])
 
-            # 3:1 Imbalance detection
+            # 3:1 Imbalance detection (computed strictly on directional volume)
             imb_state = "BALANCED"
             imb_ratio = 1.0
 
@@ -188,10 +203,10 @@ class OrderFlowAlgoEngine:
                 elif buy_vol <= 0 and sell_vol > 0:
                     imb_state = "SELL_IMBALANCE"
                     imb_ratio = 999.0
-                elif buy_vol >= threshold * sell_vol:
+                elif sell_vol > 0 and buy_vol >= threshold * sell_vol:
                     imb_state = "BUY_IMBALANCE"
                     imb_ratio = buy_vol / sell_vol
-                elif sell_vol >= threshold * buy_vol:
+                elif buy_vol > 0 and sell_vol >= threshold * buy_vol:
                     imb_state = "SELL_IMBALANCE"
                     imb_ratio = sell_vol / buy_vol
 
@@ -207,7 +222,12 @@ class OrderFlowAlgoEngine:
                 imbalance_ratio=imb_ratio,
                 tick_count=t_count,
                 interval_ms=interval_ms,
-                price_level=vwap
+                price_level=vwap,
+                confirmed_buy_vol=float(conf_buy_vols[i]),
+                confirmed_sell_vol=float(conf_sell_vols[i]),
+                inferred_buy_vol=float(inf_buy_vols[i]),
+                inferred_sell_vol=float(inf_sell_vols[i]),
+                neutral_vol=float(neutral_vols[i])
             ))
 
         return bubbles

@@ -19,18 +19,23 @@ class AlgoBubble:
     Pure mathematical representation of an aggregated order flow bubble.
     Completely decoupled from visual coordinates.
     """
-    ts: int               # Representative timestamp (ms)
-    price: float          # Exact price or VWAP
-    volume: float         # Aggregated total volume
-    buy_vol: float        # Aggressive buy volume
-    sell_vol: float       # Aggressive sell volume
-    delta: float          # Net delta (buy_vol - sell_vol)
-    delta_ratio: float    # delta / volume (-1.0 to +1.0)
-    imbalance_state: str  # 'BUY_IMBALANCE' | 'SELL_IMBALANCE' | 'BALANCED'
-    imbalance_ratio: float# Dominant side ratio (e.g. 3.5 = 3.5:1)
-    tick_count: int       # Number of ticks in this bubble
-    interval_ms: int      # Accumulation window
-    price_level: float    # Ladder rung price or VWAP
+    ts: int                     # Representative timestamp (ms)
+    price: float                # Exact price or VWAP
+    volume: float               # Aggregated total volume
+    buy_vol: float              # Total buy volume (confirmed + inferred)
+    sell_vol: float             # Total sell volume (confirmed + inferred)
+    delta: float                # Net delta (buy_vol - sell_vol)
+    delta_ratio: float          # delta / volume (-1.0 to +1.0)
+    imbalance_state: str        # 'BUY_IMBALANCE' | 'SELL_IMBALANCE' | 'BALANCED'
+    imbalance_ratio: float      # Dominant side ratio (e.g. 3.5 = 3.5:1)
+    tick_count: int             # Number of ticks in this bubble
+    interval_ms: int            # Accumulation window
+    price_level: float          # Ladder rung price or VWAP
+    confirmed_buy_vol: float = 0.0   # 100% verified aggressive market buy (flags & 32 / at ask)
+    confirmed_sell_vol: float = 0.0  # 100% verified aggressive market sell (flags & 64 / at bid)
+    inferred_buy_vol: float = 0.0    # Tick-rule / uptick inferred buy
+    inferred_sell_vol: float = 0.0   # Tick-rule / downtick inferred sell
+    neutral_vol: float = 0.0         # True neutral / unclassified quote volume
 
 @dataclass(frozen=True, slots=True)
 class MacroStructure:

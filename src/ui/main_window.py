@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
 from PySide6.QtCore import Qt
 from src.algo.tick_store import TickStore
+from src.algo.symbol_manager import SymbolManager
 from src.ui.header_bar import HeaderBar
 from src.ui.gl_canvas import GLCanvas
 from src.ui.control_dock import ControlDock
@@ -14,9 +15,16 @@ class MainWindow(QMainWindow):
     Seamlessly assembles Header, GLCanvas, Floating Bottom Dock, and Slide-Out Studio Panel.
     Fully persistent across restarts (remembers FPS target, Mode, Interval, Gap, Scale, and Window Geometry).
     """
-    def __init__(self, tick_store: TickStore):
+    def __init__(self, tick_store: TickStore = None, symbol_manager: SymbolManager = None):
         super().__init__()
-        self.tick_store = tick_store
+        if symbol_manager is not None:
+            self.symbol_manager = symbol_manager
+            self.tick_store = symbol_manager.get_active().tick_store
+        else:
+            self.symbol_manager = SymbolManager()
+            if tick_store is not None:
+                self.symbol_manager.get_active().tick_store = tick_store
+            self.tick_store = self.symbol_manager.get_active().tick_store
 
         self.setWindowTitle("BUBBLES — Order Flow Terminal")
         self.setMinimumSize(900, 600)
@@ -35,7 +43,7 @@ class MainWindow(QMainWindow):
         self.main_layout.addWidget(self.header)
 
         # 2. GL Canvas Workspace
-        self.canvas = GLCanvas(self.tick_store, self)
+        self.canvas = GLCanvas(parent=self, symbol_manager=self.symbol_manager)
         self.main_layout.addWidget(self.canvas, stretch=1)
 
         # 3. Floating Bottom Dock
@@ -113,6 +121,7 @@ class MainWindow(QMainWindow):
         self.header.fps_target_selected.connect(self._on_fps_target_changed)
         self.header.reset_camera_clicked.connect(self.canvas.reset_camera)
         self.header.settings_toggled.connect(self._toggle_settings)
+        self.header.symbol_clicked.connect(self._on_symbol_clicked)
 
         # Dock -> Canvas & Settings
         self.dock.interval_selected.connect(self._on_interval_selected)
@@ -216,9 +225,40 @@ class MainWindow(QMainWindow):
                 h
             )
 
+    def switch_symbol(self, symbol: str):
+        """
+        Switches the UI presentation to the requested symbol without wiping
+        or corrupting other symbols' independent buffers.
+        """
+        if not symbol:
+            return
+        state = self.symbol_manager.set_active(symbol)
+        if state:
+            self.tick_store = state.tick_store
+            self.canvas.bind_symbol_state(state)
+            self.header.symbol = state.symbol
+            self.header.last_price = state.last_known_price
+            self.header.update()
+
+    def _on_symbol_clicked(self):
+        symbols = self.symbol_manager.list_symbols()
+        if len(symbols) <= 1:
+            return
+        curr = self.symbol_manager.active_symbol
+        idx = symbols.index(curr) if curr in symbols else 0
+        next_sym = symbols[(idx + 1) % len(symbols)]
+        self.switch_symbol(next_sym)
+
     def on_symbol_meta(self, symbol: str, tick_size: float = 0.01, digits: int = 2):
+        if not symbol:
+            return
+        state = self.symbol_manager.get_or_create(symbol)
+        state.configure_meta(tick_size=tick_size, digits=digits)
         if hasattr(self, 'canvas'):
             self.canvas.set_symbol_info(symbol, tick_size, digits)
+        if self.symbol_manager.active_symbol == symbol:
+            self.header.symbol = symbol
+            self.header.update()
 
     def closeEvent(self, event):
         # 1. Save window state

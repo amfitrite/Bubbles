@@ -22,8 +22,10 @@ class MonospaceTooltip(QWidget):
     def show_bubble(self, algo_bubble: AlgoBubble, screen_x: float, screen_y: float,
                     canvas_w: int, canvas_h: int):
         self.data = algo_bubble
-        card_w = 230
-        card_h = 138
+        has_extra = (getattr(algo_bubble, 'neutral_vol', 0.0) > 0.0 or
+                     (getattr(algo_bubble, 'inferred_buy_vol', 0.0) + getattr(algo_bubble, 'inferred_sell_vol', 0.0)) > 0.0)
+        card_w = 236
+        card_h = 154 if has_extra else 138
 
         # Smart placement to keep within canvas boundaries
         pos_x = screen_x + 16
@@ -77,11 +79,21 @@ class MonospaceTooltip(QWidget):
             ("PRICE (VWAP)", f"{b.price:.2f}"),
             ("TOTAL VOL", f"{b.volume:.2f}"),
             ("BUY / SELL", f"{b.buy_vol:.1f} / {b.sell_vol:.1f}"),
+        ]
+
+        has_extra = (getattr(b, 'neutral_vol', 0.0) > 0.0 or
+                     (getattr(b, 'inferred_buy_vol', 0.0) + getattr(b, 'inferred_sell_vol', 0.0)) > 0.0)
+        if has_extra:
+            conf_tot = getattr(b, 'confirmed_buy_vol', 0.0) + getattr(b, 'confirmed_sell_vol', 0.0)
+            neut = getattr(b, 'neutral_vol', 0.0)
+            rows.append(("CONF / NEUT", f"{conf_tot:.1f} / {neut:.1f}"))
+
+        rows.extend([
             ("NET DELTA", f"{b.delta:+.2f} ({b.delta_ratio * 100:+.0f}%)"),
             ("IMBALANCE", f"{b.imbalance_state} ({b.imbalance_ratio:.1f}x)" if b.imbalance_state != "BALANCED" else "BALANCED"),
             ("TIME", dt_str),
             ("TICKS FUSED", f"{b.tick_count} ticks")
-        ]
+        ])
 
         y_offset = 18
         for label, val in rows:

@@ -112,13 +112,27 @@ class SpriteEngine:
         self.cache[key] = pixmap
         return pixmap
 
-    def get_split_pie_sprite(self, radius: int, buy_vol: float, total_vol: float) -> QPixmap:
-        """Mode 1: SPLIT_PIE (Quantized 5% ratio steps)"""
+    def get_split_pie_sprite(self, radius: int, buy_vol: float, sell_vol: float = 0.0, total_vol: float = 0.0) -> QPixmap:
+        """Mode 1: SPLIT_PIE (Quantized 5% ratio steps based on aggressive flow)"""
         r = max(self.min_radius, min(self.max_radius, radius))
-        if total_vol <= 0:
-            buy_ratio = 0.5
-        else:
-            buy_ratio = max(0.0, min(1.0, buy_vol / total_vol))
+        directional_vol = buy_vol + sell_vol
+
+        if directional_vol <= 0:
+            # 100% Neutral Volume (no aggressive buyer or seller)
+            key = (r, "PIE_NEUTRAL")
+            if key in self.cache:
+                return self.cache[key]
+            pixmap = self._create_disc_pixmap(r)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.Antialiasing, True)
+            painter.setBrush(QBrush(Theme.NEUTRAL_SLATE))
+            painter.setPen(QPen(QColor(255, 255, 255, 35), 1.0))
+            painter.drawEllipse(QRectF(1, 1, r * 2, r * 2))
+            painter.end()
+            self.cache[key] = pixmap
+            return pixmap
+
+        buy_ratio = max(0.0, min(1.0, buy_vol / directional_vol))
 
         # Quantize ratio into 20 steps (0.00, 0.05, 0.10, ..., 1.00)
         quantized_step = int(round(buy_ratio * 20.0))
@@ -180,7 +194,7 @@ class SpriteEngine:
         r_int = max(self.min_radius, min(self.max_radius, int(round(radius))))
 
         if mode == "SPLIT_PIE":
-            sprite = self.get_split_pie_sprite(r_int, bubble_data.buy_vol, bubble_data.volume)
+            sprite = self.get_split_pie_sprite(r_int, bubble_data.buy_vol, getattr(bubble_data, 'sell_vol', 0.0), bubble_data.volume)
         elif mode == "DELTA":
             sprite = self.get_delta_sprite(r_int, bubble_data.delta)
         elif mode == "IMBALANCE":
