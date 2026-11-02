@@ -1,20 +1,13 @@
 @echo off
-title Bubbles - Order Flow Terminal
-echo ====================================================
-echo Starting Bubbles Terminal (Monochrome Matte Studio)
-echo Ports: 5555..5559 [MT5 Multi-Port Bridge]
-echo ====================================================
-echo.
+title Bubbles Terminal Launcher
+cd /d "%~dp0"
 
-:: Check virtual environment
-if exist "venv\Scripts\python.exe" (
-    venv\Scripts\python.exe app.py
+:: Launch silently using pythonw.exe (windowless subsystem - zero console window)
+if exist "venv\Scripts\pythonw.exe" (
+    start "" "venv\Scripts\pythonw.exe" app.py
+) else if exist "venv\Scripts\python.exe" (
+    start "" "venv\Scripts\python.exe" app.py
 ) else (
-    python app.py
+    start "" pythonw app.py
 )
-
-if %errorlevel% neq 0 (
-    echo.
-    echo [ERROR] Application exited with error code %errorlevel%
-    pause
-)
+exit

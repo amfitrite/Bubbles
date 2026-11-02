@@ -13,11 +13,33 @@ from src.algo.symbol_manager import SymbolManager
 from src.network.bridge_server import BridgeServer
 from src.ui.main_window import MainWindow
 
-# Configure clean logging
+# Windows Pro Application ID & Console Window Suppression
+if sys.platform == "win32":
+    try:
+        import ctypes
+        # Set distinct AppUserModelID so Windows taskbar groups under this app icon instead of Python.exe
+        app_id = "antigravity.bubbles.terminal.v2"
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+
+        # Hide any console window that was created by python.exe or launcher
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE = 0
+    except Exception:
+        pass
+
+# Configure clean file logging in logs/bubbles.log (no console spam)
+log_dir = Path(__file__).parent / "logs"
+log_dir.mkdir(exist_ok=True)
+log_file = log_dir / "bubbles.log"
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%H:%M:%S'
+    datefmt='%H:%M:%S',
+    handlers=[
+        logging.FileHandler(str(log_file), encoding='utf-8', mode='a')
+    ]
 )
 logger = logging.getLogger("BubblesApp")
 
@@ -33,6 +55,20 @@ class BubblesApp:
         self.app = QApplication(sys.argv)
         self.app.setApplicationName("Bubbles Terminal")
 
+        # Load Pro High-Resolution Icon for Window, Taskbar, and Alt-Tab
+        assets_dir = Path(__file__).parent / "assets"
+        ico_file = assets_dir / "icon.ico"
+        png_file = assets_dir / "icon.png"
+
+        self.icon = QIcon()
+        if ico_file.exists():
+            self.icon = QIcon(str(ico_file))
+        elif png_file.exists():
+            self.icon = QIcon(str(png_file))
+
+        if not self.icon.isNull():
+            self.app.setWindowIcon(self.icon)
+
         # Multi-Symbol Isolation Engine
         self.symbol_manager = SymbolManager()
 
@@ -41,6 +77,8 @@ class BubblesApp:
 
         # Main Window
         self.window = MainWindow(symbol_manager=self.symbol_manager)
+        if not self.icon.isNull():
+            self.window.setWindowIcon(self.icon)
 
     @property
     def tick_store(self) -> TickStore:

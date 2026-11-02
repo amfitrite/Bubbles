@@ -1,4 +1,6 @@
+from pathlib import Path
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
+from PySide6.QtGui import QIcon
 from PySide6.QtCore import Qt
 from src.algo.tick_store import TickStore
 from src.algo.symbol_manager import SymbolManager
@@ -29,6 +31,15 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("BUBBLES — Order Flow Terminal")
         self.setMinimumSize(900, 600)
         self.setStyleSheet(f"QMainWindow {{ background-color: #0B0D11; }}")
+
+        # Load Pro Application Icon
+        assets_dir = Path(__file__).resolve().parent.parent.parent / "assets"
+        ico_file = assets_dir / "icon.ico"
+        png_file = assets_dir / "icon.png"
+        if ico_file.exists():
+            self.setWindowIcon(QIcon(str(ico_file)))
+        elif png_file.exists():
+            self.setWindowIcon(QIcon(str(png_file)))
 
         # Central Container
         self.central_widget = QWidget(self)

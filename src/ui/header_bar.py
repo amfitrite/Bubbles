@@ -1,6 +1,7 @@
 import time
+from pathlib import Path
 from PySide6.QtWidgets import QWidget
-from PySide6.QtGui import QPainter, QFont, QPen, QBrush, QColor
+from PySide6.QtGui import QPainter, QFont, QPen, QBrush, QColor, QPixmap
 from PySide6.QtCore import Qt, QRectF, Signal
 from src.visual.theme import Theme
 
@@ -35,6 +36,12 @@ class HeaderBar(QWidget):
         ]
         self._fps_rects = []
 
+        assets_png = Path(__file__).resolve().parent.parent.parent / "assets" / "icon.png"
+        if assets_png.exists():
+            self.logo_pixmap = QPixmap(str(assets_png)).scaled(20, 20, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        else:
+            self.logo_pixmap = None
+
     def update_telemetry(self, symbol: str, price: float, is_connected: bool,
                          last_tick_time: float, fps: float, active_mode: str,
                          fps_target: str = "60"):
@@ -63,27 +70,34 @@ class HeaderBar(QWidget):
         painter.drawLine(0, h - 1, w, h - 1)
 
         # -------------------------------------------------------------
-        # 1. LEFT: Market Identity (Symbol, Price, Live Status)
+        # 1. LEFT: Market Identity (App Icon, Symbol, Price, Live Status)
         # -------------------------------------------------------------
         now = time.time()
         is_live = self.is_connected and (now - self.last_tick_time < 5.0) if self.last_tick_time > 0 else False
         dot_color = Theme.STATUS_LIVE if is_live else Theme.STATUS_OFFLINE
 
+        cur_x = 12
+        if self.logo_pixmap:
+            painter.drawPixmap(cur_x, 9, self.logo_pixmap)
+            cur_x += 26
+
         # Status Dot
         painter.setBrush(QBrush(dot_color))
         painter.setPen(Qt.NoPen)
-        painter.drawEllipse(14, 15, 7, 7)
+        painter.drawEllipse(cur_x, 16, 7, 7)
+        cur_x += 12
 
         # Symbol
         painter.setFont(QFont("Segoe UI", 10, QFont.Bold))
         painter.setPen(Theme.TEXT_PRIMARY)
-        painter.drawText(28, 24, self.symbol)
+        painter.drawText(cur_x, 24, self.symbol)
+        cur_x += painter.fontMetrics().horizontalAdvance(self.symbol) + 12
 
         # Price
         painter.setFont(QFont("Segoe UI", 10))
         painter.setPen(Theme.TOTAL_VOLUME)
         price_text = f"{self.last_price:.2f}" if self.last_price > 0 else "--.--"
-        painter.drawText(95, 24, price_text)
+        painter.drawText(cur_x, 24, price_text)
 
         # -------------------------------------------------------------
         # 2. CENTER: 4 Modes Segmented Selector
@@ -184,7 +198,7 @@ class HeaderBar(QWidget):
         w = self.width()
 
         # 1. Check Symbol Click
-        if 10 <= pos.x() <= 90 and 5 <= pos.y() <= 32:
+        if 10 <= pos.x() <= 120 and 5 <= pos.y() <= 32:
             self.symbol_clicked.emit()
             event.accept()
             return
