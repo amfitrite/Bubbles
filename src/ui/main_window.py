@@ -243,11 +243,13 @@ class MainWindow(QMainWindow):
         """
         if not symbol:
             return
-        state = self.symbol_manager.set_active(symbol)
+        sym = symbol.strip().upper()
+        state = self.symbol_manager.set_active(sym)
         if state:
             self.tick_store = state.tick_store
             self.canvas.bind_symbol_state(state)
             self.header.symbol = state.symbol
+            self.header.digits = state.digits
             self.header.last_price = state.last_known_price
             self.header.update()
 
@@ -263,13 +265,17 @@ class MainWindow(QMainWindow):
     def on_symbol_meta(self, symbol: str, tick_size: float = 0.01, digits: int = 2):
         if not symbol:
             return
-        state = self.symbol_manager.get_or_create(symbol)
+        sym = symbol.strip().upper()
+        state = self.symbol_manager.get_or_create(sym)
         state.configure_meta(tick_size=tick_size, digits=digits)
-        if hasattr(self, 'canvas'):
-            self.canvas.set_symbol_info(symbol, tick_size, digits)
-        if self.symbol_manager.active_symbol == symbol:
-            self.header.symbol = symbol
-            self.header.update()
+
+        # Auto-switch to this streaming symbol if current canvas view has 0 ticks or is initial default
+        canvas_ticks = self.canvas.tick_store.count if self.canvas.tick_store else 0
+        if canvas_ticks == 0 or self.canvas.symbol in (sym, "XAUUSD", "UNKNOWN") or ("XAU" in sym and "XAU" in self.canvas.symbol):
+            self.switch_symbol(sym)
+        else:
+            if hasattr(self, 'canvas'):
+                self.canvas.set_symbol_info(sym, tick_size, digits)
 
     def closeEvent(self, event):
         # 1. Save window state

@@ -13,7 +13,7 @@ class MonospaceTooltip(QWidget):
     """
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(Qt.SubWindow | Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.data: AlgoBubble = None

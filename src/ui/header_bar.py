@@ -96,7 +96,8 @@ class HeaderBar(QWidget):
         # Price
         painter.setFont(QFont("Segoe UI", 10))
         painter.setPen(Theme.TOTAL_VOLUME)
-        price_text = f"{self.last_price:.2f}" if self.last_price > 0 else "--.--"
+        p_dig = getattr(self, 'digits', 2)
+        price_text = f"{self.last_price:.{p_dig}f}" if self.last_price > 0 else "--.--"
         painter.drawText(cur_x, 24, price_text)
 
         # -------------------------------------------------------------

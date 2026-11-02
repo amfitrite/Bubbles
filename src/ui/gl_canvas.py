@@ -152,14 +152,17 @@ class GLCanvas(BaseCanvas):
             self.bind_symbol_state(state)
 
     def set_symbol_info(self, symbol: str, tick_size: float = 0.01, digits: int = 2):
+        if not symbol:
+            return
+        sym = symbol.strip().upper()
         if self.symbol_manager:
-            state = self.symbol_manager.get_or_create(symbol)
+            state = self.symbol_manager.get_or_create(sym)
             state.configure_meta(tick_size=tick_size, digits=digits)
-            if symbol and (self.symbol == symbol or self.symbol == "UNKNOWN"):
+            canvas_ticks = self.tick_store.count if self.tick_store else 0
+            if sym and (self.symbol == sym or canvas_ticks == 0 or self.symbol in ("XAUUSD", "UNKNOWN") or ("XAU" in sym and "XAU" in self.symbol)):
                 self.bind_symbol_state(state)
         else:
-            if symbol:
-                self.symbol = symbol
+            self.symbol = sym
             if tick_size > 0:
                 self.tick_size = tick_size
             self.digits = max(0, int(digits))

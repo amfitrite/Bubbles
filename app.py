@@ -93,6 +93,12 @@ class BubblesApp:
         sym = symbol.strip().upper() if symbol else self.symbol_manager.active_symbol
         state = self.symbol_manager.get_or_create(sym)
 
+        # Auto-switch to active incoming stream if current canvas has 0 ticks or is default placeholder
+        if hasattr(self, 'window') and self.window.canvas.symbol != sym:
+            canvas_ticks = self.window.canvas.tick_store.count if self.window.canvas.tick_store else 0
+            if canvas_ticks == 0 or self.window.canvas.symbol in ("XAUUSD", "UNKNOWN") or ("XAU" in sym and "XAU" in self.window.canvas.symbol):
+                self.window.switch_symbol(sym)
+
         if msg_type == 'TICK':
             bid = float(data.get('bid', 0.0))
             ask = float(data.get('ask', 0.0))
@@ -117,9 +123,6 @@ class BubblesApp:
             if cnt % 250 == 0:
                 logger.info(f"Ingested tick #{state.tick_count} [{sym}] price={state.last_known_price:.2f} vol={vol} side={side} added={added}")
             self._tick_log_count = cnt + 1
-
-            if sym and hasattr(self, 'window') and self.window.canvas.symbol != sym and len(self.symbol_manager.list_symbols()) == 1:
-                self.window.switch_symbol(sym)
 
         elif msg_type == 'META':
             logger.info(f"Received META for {sym}: {data}")

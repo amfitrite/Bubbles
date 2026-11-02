@@ -30,8 +30,7 @@ class BridgeServer:
         for port in self.ports:
             try:
                 server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                if os.name != 'nt':
-                    server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 server_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
                 server_sock.bind((self.host, port))
