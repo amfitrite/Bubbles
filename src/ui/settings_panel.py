@@ -126,6 +126,17 @@ class SettingsPanel(QWidget):
         self.btn_fps_120 = QPushButton("120")
         self.btn_fps_max = QPushButton("MAX")
 
+        # Palette UX Improvements: Accessibilty & Affordances
+        for btn in (self.btn_fps_60, self.btn_fps_120, self.btn_fps_max):
+            btn.setCursor(Qt.PointingHandCursor)
+
+        self.btn_fps_60.setToolTip("Limit rendering to 60 FPS")
+        self.btn_fps_60.setAccessibleName("Set frame rate limit to 60 FPS")
+        self.btn_fps_120.setToolTip("Limit rendering to 120 FPS")
+        self.btn_fps_120.setAccessibleName("Set frame rate limit to 120 FPS")
+        self.btn_fps_max.setToolTip("Uncapped rendering frame rate")
+        self.btn_fps_max.setAccessibleName("Set frame rate limit to maximum")
+
         self.btn_fps_60.clicked.connect(lambda: self._on_fps_btn("60"))
         self.btn_fps_120.clicked.connect(lambda: self._on_fps_btn("120"))
         self.btn_fps_max.clicked.connect(lambda: self._on_fps_btn("UNLIMITED"))
@@ -138,14 +149,23 @@ class SettingsPanel(QWidget):
         # 6. Camera Toggles
         layout.addSpacing(10)
         self.btn_autofit = QPushButton("AUTO-FIT PRICE: ON")
+        self.btn_autofit.setCursor(Qt.PointingHandCursor)
+        self.btn_autofit.setToolTip("Toggle automatic scaling of price axis")
+        self.btn_autofit.setAccessibleName("Toggle auto-fit price")
         self.btn_autofit.clicked.connect(self._toggle_autofit)
         layout.addWidget(self.btn_autofit)
 
         self.btn_autocenter = QPushButton("AUTO CENTER: ON")
+        self.btn_autocenter.setCursor(Qt.PointingHandCursor)
+        self.btn_autocenter.setToolTip("Toggle automatic centering of price in viewport")
+        self.btn_autocenter.setAccessibleName("Toggle auto center")
         self.btn_autocenter.clicked.connect(self._toggle_autocenter)
         layout.addWidget(self.btn_autocenter)
 
         self.btn_live = QPushButton("AUTO SCROLL: ON")
+        self.btn_live.setCursor(Qt.PointingHandCursor)
+        self.btn_live.setToolTip("Toggle automatic scrolling to latest tick")
+        self.btn_live.setAccessibleName("Toggle auto scroll")
         self.btn_live.clicked.connect(self._toggle_live)
         layout.addWidget(self.btn_live)
 
