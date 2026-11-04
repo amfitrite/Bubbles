@@ -123,8 +123,17 @@ class SettingsPanel(QWidget):
         fps_row.setSpacing(6)
 
         self.btn_fps_60 = QPushButton("60")
+        self.btn_fps_60.setCursor(Qt.PointingHandCursor)
+        self.btn_fps_60.setAccessibleName("FPS limit 60")
+        self.btn_fps_60.setToolTip("Set FPS target to 60")
         self.btn_fps_120 = QPushButton("120")
+        self.btn_fps_120.setCursor(Qt.PointingHandCursor)
+        self.btn_fps_120.setAccessibleName("FPS limit 120")
+        self.btn_fps_120.setToolTip("Set FPS target to 120")
         self.btn_fps_max = QPushButton("MAX")
+        self.btn_fps_max.setCursor(Qt.PointingHandCursor)
+        self.btn_fps_max.setAccessibleName("FPS limit max")
+        self.btn_fps_max.setToolTip("Set FPS target to unlimited")
 
         self.btn_fps_60.clicked.connect(lambda: self._on_fps_btn("60"))
         self.btn_fps_120.clicked.connect(lambda: self._on_fps_btn("120"))
@@ -138,14 +147,23 @@ class SettingsPanel(QWidget):
         # 6. Camera Toggles
         layout.addSpacing(10)
         self.btn_autofit = QPushButton("AUTO-FIT PRICE: ON")
+        self.btn_autofit.setCursor(Qt.PointingHandCursor)
+        self.btn_autofit.setAccessibleName("Auto-fit Price")
+        self.btn_autofit.setToolTip("Toggle automatic fitting of price scale")
         self.btn_autofit.clicked.connect(self._toggle_autofit)
         layout.addWidget(self.btn_autofit)
 
         self.btn_autocenter = QPushButton("AUTO CENTER: ON")
+        self.btn_autocenter.setCursor(Qt.PointingHandCursor)
+        self.btn_autocenter.setAccessibleName("Auto Center View")
+        self.btn_autocenter.setToolTip("Toggle automatic centering of the view")
         self.btn_autocenter.clicked.connect(self._toggle_autocenter)
         layout.addWidget(self.btn_autocenter)
 
         self.btn_live = QPushButton("AUTO SCROLL: ON")
+        self.btn_live.setCursor(Qt.PointingHandCursor)
+        self.btn_live.setAccessibleName("Auto Scroll to Live")
+        self.btn_live.setToolTip("Toggle following the live market stream")
         self.btn_live.clicked.connect(self._toggle_live)
         layout.addWidget(self.btn_live)
 
