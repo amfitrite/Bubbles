@@ -156,6 +156,32 @@ class SettingsPanel(QWidget):
         self._live_val = True
         self._fps_target = "60"
         self._refresh_fps_buttons()
+        self._apply_accessibility()
+
+    def _apply_accessibility(self):
+        # Slider accessibility
+        for slider, name, tip in [
+            (self.slider_gap, "Minimum Pixel Gap Slider", "Adjust minimum pixel gap between bubbles"),
+            (self.slider_scale, "Bubble Scale Slider", "Scale multiplier for bubble sizes"),
+            (self.slider_imb, "Imbalance Ratio Slider", "Ratio to highlight order flow imbalances"),
+            (self.slider_min_vol, "Minimum Volume Filter Slider", "Minimum lot size to display")
+        ]:
+            slider.setCursor(Qt.PointingHandCursor)
+            slider.setToolTip(tip)
+            slider.setAccessibleName(name)
+
+        # Button accessibility
+        for btn, name, tip in [
+            (self.btn_fps_60, "60 FPS Cap", "Limit frame rate to 60 FPS"),
+            (self.btn_fps_120, "120 FPS Cap", "Limit frame rate to 120 FPS"),
+            (self.btn_fps_max, "Unlimited FPS", "Remove frame rate cap"),
+            (self.btn_autofit, "Auto-Fit Price Toggle", "Automatically fit price scale to visible data"),
+            (self.btn_autocenter, "Auto Center Toggle", "Keep latest price centered vertically"),
+            (self.btn_live, "Auto Scroll Toggle", "Automatically scroll to newest data")
+        ]:
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setToolTip(tip)
+            btn.setAccessibleName(name)
 
     def _on_gap_slider(self, val):
         self.lbl_gap.setText(f"MIN PIXEL GAP: {val} px")
