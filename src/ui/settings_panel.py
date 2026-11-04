@@ -85,6 +85,9 @@ class SettingsPanel(QWidget):
         self.slider_gap.setRange(0, 25)
         self.slider_gap.setValue(6)
         self.slider_gap.valueChanged.connect(self._on_gap_slider)
+        self.slider_gap.setCursor(Qt.PointingHandCursor)
+        self.slider_gap.setToolTip("Adjust minimum pixel gap between bubbles")
+        self.slider_gap.setAccessibleName("Minimum Pixel Gap Slider")
         layout.addWidget(self.slider_gap)
 
         # 2. Bubble Scale Slider
@@ -94,6 +97,9 @@ class SettingsPanel(QWidget):
         self.slider_scale.setRange(4, 30) # 0.4x to 3.0x
         self.slider_scale.setValue(10)
         self.slider_scale.valueChanged.connect(self._on_scale_slider)
+        self.slider_scale.setCursor(Qt.PointingHandCursor)
+        self.slider_scale.setToolTip("Adjust bubble scale multiplier")
+        self.slider_scale.setAccessibleName("Bubble Scale Slider")
         layout.addWidget(self.slider_scale)
 
         # 3. Imbalance Ratio Threshold Slider
@@ -103,6 +109,9 @@ class SettingsPanel(QWidget):
         self.slider_imb.setRange(15, 80) # 1.5x to 8.0x
         self.slider_imb.setValue(30)
         self.slider_imb.valueChanged.connect(self._on_imb_slider)
+        self.slider_imb.setCursor(Qt.PointingHandCursor)
+        self.slider_imb.setToolTip("Adjust ratio threshold for highlighting imbalance")
+        self.slider_imb.setAccessibleName("Imbalance Ratio Threshold Slider")
         layout.addWidget(self.slider_imb)
 
         # 4. Min Volume Filter Slider
@@ -112,6 +121,9 @@ class SettingsPanel(QWidget):
         self.slider_min_vol.setRange(0, 50) # 0 to 50 lots
         self.slider_min_vol.setValue(0)
         self.slider_min_vol.valueChanged.connect(self._on_min_vol_slider)
+        self.slider_min_vol.setCursor(Qt.PointingHandCursor)
+        self.slider_min_vol.setToolTip("Filter out bubbles below this volume")
+        self.slider_min_vol.setAccessibleName("Minimum Volume Filter Slider")
         layout.addWidget(self.slider_min_vol)
 
         # 5. Frame Rate Cap (FPS Limit)
@@ -126,6 +138,15 @@ class SettingsPanel(QWidget):
         self.btn_fps_120 = QPushButton("120")
         self.btn_fps_max = QPushButton("MAX")
 
+        for btn, name, tooltip in [
+            (self.btn_fps_60, "Limit to 60 FPS", "Cap rendering at 60 FPS"),
+            (self.btn_fps_120, "Limit to 120 FPS", "Cap rendering at 120 FPS"),
+            (self.btn_fps_max, "Unlimited FPS", "Remove FPS limit (may cause high CPU/GPU usage)")
+        ]:
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setAccessibleName(name)
+            btn.setToolTip(tooltip)
+
         self.btn_fps_60.clicked.connect(lambda: self._on_fps_btn("60"))
         self.btn_fps_120.clicked.connect(lambda: self._on_fps_btn("120"))
         self.btn_fps_max.clicked.connect(lambda: self._on_fps_btn("UNLIMITED"))
@@ -139,14 +160,23 @@ class SettingsPanel(QWidget):
         layout.addSpacing(10)
         self.btn_autofit = QPushButton("AUTO-FIT PRICE: ON")
         self.btn_autofit.clicked.connect(self._toggle_autofit)
+        self.btn_autofit.setCursor(Qt.PointingHandCursor)
+        self.btn_autofit.setToolTip("Toggle automatic scaling of price axis to fit visible bubbles")
+        self.btn_autofit.setAccessibleName("Toggle Auto-Fit Price")
         layout.addWidget(self.btn_autofit)
 
         self.btn_autocenter = QPushButton("AUTO CENTER: ON")
         self.btn_autocenter.clicked.connect(self._toggle_autocenter)
+        self.btn_autocenter.setCursor(Qt.PointingHandCursor)
+        self.btn_autocenter.setToolTip("Toggle auto-centering of price to current live price")
+        self.btn_autocenter.setAccessibleName("Toggle Auto Center")
         layout.addWidget(self.btn_autocenter)
 
         self.btn_live = QPushButton("AUTO SCROLL: ON")
         self.btn_live.clicked.connect(self._toggle_live)
+        self.btn_live.setCursor(Qt.PointingHandCursor)
+        self.btn_live.setToolTip("Toggle auto-scroll to keep live data in view")
+        self.btn_live.setAccessibleName("Toggle Auto Scroll")
         layout.addWidget(self.btn_live)
 
         layout.addStretch()
