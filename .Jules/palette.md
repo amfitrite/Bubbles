@@ -1,0 +1,3 @@
+## 2026-11-06 - PySide6 Custom Styled Widgets Interactivity and Accessibility
+**Learning:** For PySide6 custom-styled widgets, relying on default behavior often leads to poor UX. Specifically, pointer cursors (`setCursor(Qt.PointingHandCursor)`) are missing on interactive elements, reducing affordances. Furthermore, tooltips (`setToolTip()`) and ARIA-equivalent accessible names (`setAccessibleName()`) are crucial for assistive technologies but are frequently omitted.
+**Action:** When implementing custom PySide6 interactive widgets (like QSlider or QPushButton in a settings panel), always explicitly add `setCursor(Qt.PointingHandCursor)`, `setToolTip()`, and `setAccessibleName()` to maintain standard desktop UX accessibility and interactivity affordances.
