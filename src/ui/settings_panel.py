@@ -82,6 +82,9 @@ class SettingsPanel(QWidget):
         self.lbl_gap = QLabel("MIN PIXEL GAP: 6 px")
         layout.addWidget(self.lbl_gap)
         self.slider_gap = QSlider(Qt.Horizontal)
+        self.slider_gap.setCursor(Qt.PointingHandCursor)
+        self.slider_gap.setAccessibleName("Pixel Gap Slider")
+        self.slider_gap.setToolTip("Set minimum vertical gap between price levels")
         self.slider_gap.setRange(0, 25)
         self.slider_gap.setValue(6)
         self.slider_gap.valueChanged.connect(self._on_gap_slider)
@@ -91,6 +94,9 @@ class SettingsPanel(QWidget):
         self.lbl_scale = QLabel("BUBBLE SCALE: 1.0x")
         layout.addWidget(self.lbl_scale)
         self.slider_scale = QSlider(Qt.Horizontal)
+        self.slider_scale.setCursor(Qt.PointingHandCursor)
+        self.slider_scale.setAccessibleName("Bubble Scale Slider")
+        self.slider_scale.setToolTip("Adjust the visual size of volume bubbles")
         self.slider_scale.setRange(4, 30) # 0.4x to 3.0x
         self.slider_scale.setValue(10)
         self.slider_scale.valueChanged.connect(self._on_scale_slider)
@@ -100,6 +106,9 @@ class SettingsPanel(QWidget):
         self.lbl_imb = QLabel("IMBALANCE RATIO: 3.0x")
         layout.addWidget(self.lbl_imb)
         self.slider_imb = QSlider(Qt.Horizontal)
+        self.slider_imb.setCursor(Qt.PointingHandCursor)
+        self.slider_imb.setAccessibleName("Imbalance Ratio Slider")
+        self.slider_imb.setToolTip("Set the threshold ratio for volume imbalance highlighting")
         self.slider_imb.setRange(15, 80) # 1.5x to 8.0x
         self.slider_imb.setValue(30)
         self.slider_imb.valueChanged.connect(self._on_imb_slider)
@@ -109,6 +118,9 @@ class SettingsPanel(QWidget):
         self.lbl_min_vol = QLabel("MIN VOLUME FILTER: 0.0 LOTS")
         layout.addWidget(self.lbl_min_vol)
         self.slider_min_vol = QSlider(Qt.Horizontal)
+        self.slider_min_vol.setCursor(Qt.PointingHandCursor)
+        self.slider_min_vol.setAccessibleName("Minimum Volume Filter Slider")
+        self.slider_min_vol.setToolTip("Hide volume bubbles smaller than this value")
         self.slider_min_vol.setRange(0, 50) # 0 to 50 lots
         self.slider_min_vol.setValue(0)
         self.slider_min_vol.valueChanged.connect(self._on_min_vol_slider)
@@ -123,8 +135,14 @@ class SettingsPanel(QWidget):
         fps_row.setSpacing(6)
 
         self.btn_fps_60 = QPushButton("60")
+        self.btn_fps_60.setCursor(Qt.PointingHandCursor)
+        self.btn_fps_60.setAccessibleName("60 FPS Limit")
         self.btn_fps_120 = QPushButton("120")
+        self.btn_fps_120.setCursor(Qt.PointingHandCursor)
+        self.btn_fps_120.setAccessibleName("120 FPS Limit")
         self.btn_fps_max = QPushButton("MAX")
+        self.btn_fps_max.setCursor(Qt.PointingHandCursor)
+        self.btn_fps_max.setAccessibleName("Unlimited FPS")
 
         self.btn_fps_60.clicked.connect(lambda: self._on_fps_btn("60"))
         self.btn_fps_120.clicked.connect(lambda: self._on_fps_btn("120"))
@@ -138,14 +156,23 @@ class SettingsPanel(QWidget):
         # 6. Camera Toggles
         layout.addSpacing(10)
         self.btn_autofit = QPushButton("AUTO-FIT PRICE: ON")
+        self.btn_autofit.setCursor(Qt.PointingHandCursor)
+        self.btn_autofit.setAccessibleName("Auto-fit Price Toggle")
+        self.btn_autofit.setToolTip("Automatically scale price axis to fit visible data")
         self.btn_autofit.clicked.connect(self._toggle_autofit)
         layout.addWidget(self.btn_autofit)
 
         self.btn_autocenter = QPushButton("AUTO CENTER: ON")
+        self.btn_autocenter.setCursor(Qt.PointingHandCursor)
+        self.btn_autocenter.setAccessibleName("Auto Center Toggle")
+        self.btn_autocenter.setToolTip("Keep current price vertically centered")
         self.btn_autocenter.clicked.connect(self._toggle_autocenter)
         layout.addWidget(self.btn_autocenter)
 
         self.btn_live = QPushButton("AUTO SCROLL: ON")
+        self.btn_live.setCursor(Qt.PointingHandCursor)
+        self.btn_live.setAccessibleName("Auto Scroll Toggle")
+        self.btn_live.setToolTip("Automatically scroll to follow live price updates")
         self.btn_live.clicked.connect(self._toggle_live)
         layout.addWidget(self.btn_live)
 
