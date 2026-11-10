@@ -82,6 +82,9 @@ class SettingsPanel(QWidget):
         self.lbl_gap = QLabel("MIN PIXEL GAP: 6 px")
         layout.addWidget(self.lbl_gap)
         self.slider_gap = QSlider(Qt.Horizontal)
+        self.slider_gap.setCursor(Qt.PointingHandCursor)
+        self.slider_gap.setToolTip("Adjust minimum spacing between visual elements")
+        self.slider_gap.setAccessibleName("Minimum Pixel Gap")
         self.slider_gap.setRange(0, 25)
         self.slider_gap.setValue(6)
         self.slider_gap.valueChanged.connect(self._on_gap_slider)
@@ -91,6 +94,9 @@ class SettingsPanel(QWidget):
         self.lbl_scale = QLabel("BUBBLE SCALE: 1.0x")
         layout.addWidget(self.lbl_scale)
         self.slider_scale = QSlider(Qt.Horizontal)
+        self.slider_scale.setCursor(Qt.PointingHandCursor)
+        self.slider_scale.setToolTip("Scale multiplier for the size of bubbles")
+        self.slider_scale.setAccessibleName("Bubble Scale Slider")
         self.slider_scale.setRange(4, 30) # 0.4x to 3.0x
         self.slider_scale.setValue(10)
         self.slider_scale.valueChanged.connect(self._on_scale_slider)
@@ -100,6 +106,9 @@ class SettingsPanel(QWidget):
         self.lbl_imb = QLabel("IMBALANCE RATIO: 3.0x")
         layout.addWidget(self.lbl_imb)
         self.slider_imb = QSlider(Qt.Horizontal)
+        self.slider_imb.setCursor(Qt.PointingHandCursor)
+        self.slider_imb.setToolTip("Threshold ratio for detecting imbalances")
+        self.slider_imb.setAccessibleName("Imbalance Ratio Threshold Slider")
         self.slider_imb.setRange(15, 80) # 1.5x to 8.0x
         self.slider_imb.setValue(30)
         self.slider_imb.valueChanged.connect(self._on_imb_slider)
@@ -109,6 +118,9 @@ class SettingsPanel(QWidget):
         self.lbl_min_vol = QLabel("MIN VOLUME FILTER: 0.0 LOTS")
         layout.addWidget(self.lbl_min_vol)
         self.slider_min_vol = QSlider(Qt.Horizontal)
+        self.slider_min_vol.setCursor(Qt.PointingHandCursor)
+        self.slider_min_vol.setToolTip("Filter out volumes below this amount")
+        self.slider_min_vol.setAccessibleName("Minimum Volume Filter Slider")
         self.slider_min_vol.setRange(0, 50) # 0 to 50 lots
         self.slider_min_vol.setValue(0)
         self.slider_min_vol.valueChanged.connect(self._on_min_vol_slider)
@@ -125,6 +137,13 @@ class SettingsPanel(QWidget):
         self.btn_fps_60 = QPushButton("60")
         self.btn_fps_120 = QPushButton("120")
         self.btn_fps_max = QPushButton("MAX")
+
+        for b, tt in [(self.btn_fps_60, "Cap at 60 FPS"),
+                      (self.btn_fps_120, "Cap at 120 FPS"),
+                      (self.btn_fps_max, "Unlimited FPS")]:
+            b.setCursor(Qt.PointingHandCursor)
+            b.setToolTip(tt)
+            b.setAccessibleName(tt)
 
         self.btn_fps_60.clicked.connect(lambda: self._on_fps_btn("60"))
         self.btn_fps_120.clicked.connect(lambda: self._on_fps_btn("120"))
@@ -148,6 +167,13 @@ class SettingsPanel(QWidget):
         self.btn_live = QPushButton("AUTO SCROLL: ON")
         self.btn_live.clicked.connect(self._toggle_live)
         layout.addWidget(self.btn_live)
+
+        for b, tt in [(self.btn_autofit, "Toggle auto-fitting of price scale"),
+                      (self.btn_autocenter, "Toggle auto-centering of view"),
+                      (self.btn_live, "Toggle auto-scrolling with new data")]:
+            b.setCursor(Qt.PointingHandCursor)
+            b.setToolTip(tt)
+            b.setAccessibleName(tt)
 
         layout.addStretch()
 
