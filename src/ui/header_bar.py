@@ -20,6 +20,7 @@ class HeaderBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(38)
+        self.setMouseTracking(True)
         self.symbol = "XAUUSD"
         self.last_price = 0.0
         self.is_connected = False
@@ -195,7 +196,7 @@ class HeaderBar(QWidget):
         painter.end()
 
     def mousePressEvent(self, event):
-        pos = event.position()
+        pos = event.position().toPoint()
         w = self.width()
 
         # 1. Check Symbol Click
@@ -242,3 +243,50 @@ class HeaderBar(QWidget):
             return
 
         event.ignore()
+
+    def mouseMoveEvent(self, event):
+        pos = event.position().toPoint()
+        w = self.width()
+
+        cursor_type = Qt.ArrowCursor
+        tooltip_text = ""
+
+        # 1. Check Symbol Click
+        if 10 <= pos.x() <= 120 and 5 <= pos.y() <= 32:
+            cursor_type = Qt.PointingHandCursor
+            tooltip_text = "Switch Symbol"
+
+        # 2. Check Mode Buttons
+        btn_w = 90
+        total_w = btn_w * 4
+        start_x = (w - total_w) / 2.0
+        btn_y = 7
+        btn_h = 24
+
+        if btn_y <= pos.y() <= btn_y + btn_h:
+            for i, (label, _) in enumerate(self.modes):
+                bx = start_x + (i * btn_w)
+                if bx <= pos.x() <= bx + btn_w:
+                    cursor_type = Qt.PointingHandCursor
+                    tooltip_text = f"Switch to {label} Mode"
+
+        # 2. Check FPS Target Selector Pills: [60], [120], [MAX]
+        if hasattr(self, '_fps_rects'):
+            for p_rect, val in self._fps_rects:
+                if p_rect.contains(pos):
+                    cursor_type = Qt.PointingHandCursor
+                    tooltip_text = f"Set FPS Limit to {val}"
+
+        # 3. Check Reset Camera Button: w - 100, 7, 24, 24
+        if (w - 100) <= pos.x() <= (w - 76) and 7 <= pos.y() <= 31:
+            cursor_type = Qt.PointingHandCursor
+            tooltip_text = "Reset Camera Position"
+
+        # 4. Check Settings Button: w - 70, 7, 55, 24
+        if (w - 70) <= pos.x() <= (w - 15) and 7 <= pos.y() <= 31:
+            cursor_type = Qt.PointingHandCursor
+            tooltip_text = "Open Studio Settings"
+
+        self.setCursor(cursor_type)
+        self.setToolTip(tooltip_text)
+        super().mouseMoveEvent(event)

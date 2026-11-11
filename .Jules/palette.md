@@ -1,0 +1,3 @@
+## 2024-11-11 - Adding standard interaction affordances to custom PySide6 widgets
+**Learning:** Custom-painted PySide6 widgets completely lack default interaction affordances (like hover cursors and tooltips) that web users naturally expect. Without these, custom UI hitboxes feel dead and non-interactive until clicked.
+**Action:** When building custom-painted PySide6 UI elements that act as buttons or selectors, ALWAYS manually wire `self.setMouseTracking(True)` in the constructor and implement `mouseMoveEvent` to dynamically update the cursor via `self.setCursor(Qt.PointingHandCursor)` and descriptive tooltips via `self.setToolTip()` when the mouse hovers over hitboxes.
