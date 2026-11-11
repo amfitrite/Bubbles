@@ -19,6 +19,7 @@ class ControlDock(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(32)
+        self.setMouseTracking(True)
         self.active_interval = "AUTO"
         self.min_gap_px = 6.0
         self.size_scale = 1.0
@@ -202,7 +203,7 @@ class ControlDock(QWidget):
         painter.end()
 
     def mousePressEvent(self, event):
-        pos = event.position()
+        pos = event.position().toPoint()
         w = self.width()
 
         # 1. Check Interval buttons
@@ -252,3 +253,48 @@ class ControlDock(QWidget):
             return
 
         event.ignore()
+
+    def mouseMoveEvent(self, event):
+        pos = event.position().toPoint()
+        w = self.width()
+
+        cursor_type = Qt.ArrowCursor
+        tooltip_text = ""
+
+        # 1. Check Interval buttons
+        interval_rects = self._get_interval_rects(w)
+        for i, rect in enumerate(interval_rects):
+            if rect.contains(pos):
+                cursor_type = Qt.PointingHandCursor
+                tooltip_text = f"Switch to {self.intervals[i]} timeframe"
+                break
+
+        if cursor_type == Qt.ArrowCursor:
+            # 2. Check Right Controls
+            rc = self._get_right_control_rects(w)
+
+            if rc['rect_gm'].contains(pos):
+                cursor_type = Qt.PointingHandCursor
+                tooltip_text = "Decrease Minimum Pixel Gap"
+            elif rc['rect_gp'].contains(pos):
+                cursor_type = Qt.PointingHandCursor
+                tooltip_text = "Increase Minimum Pixel Gap"
+            elif rc['rect_sm'].contains(pos):
+                cursor_type = Qt.PointingHandCursor
+                tooltip_text = "Decrease Bubble Scale"
+            elif rc['rect_sp'].contains(pos):
+                cursor_type = Qt.PointingHandCursor
+                tooltip_text = "Increase Bubble Scale"
+            elif rc['rect_fit'].contains(pos):
+                cursor_type = Qt.PointingHandCursor
+                tooltip_text = "Toggle Auto-Fit Price"
+            elif rc['rect_autocenter'].contains(pos):
+                cursor_type = Qt.PointingHandCursor
+                tooltip_text = "Toggle Auto Center"
+            elif rc['rect_autoscroll'].contains(pos):
+                cursor_type = Qt.PointingHandCursor
+                tooltip_text = "Toggle Auto Scroll"
+
+        self.setCursor(cursor_type)
+        self.setToolTip(tooltip_text)
+        super().mouseMoveEvent(event)
